@@ -17,6 +17,12 @@ const dbFileInput = document.getElementById("database-file");
 const dbStatus = document.getElementById("database-status");
 const questionInput = document.getElementById("question");
 const maxRowsInput = document.getElementById("max-rows");
+const llmEnabledInput = document.getElementById("llm-enabled");
+const llmFields = document.getElementById("llm-fields");
+const llmProviderInput = document.getElementById("llm-provider");
+const llmApiKeyInput = document.getElementById("llm-api-key");
+const llmModelInput = document.getElementById("llm-model");
+const llmBaseUrlInput = document.getElementById("llm-base-url");
 
 let uploadedDatabaseId = null;
 let uploadedFileFingerprint = null;
@@ -39,6 +45,10 @@ dbFileInput.addEventListener("change", () => {
   dbStatus.textContent = `已选择：${file.name}（待上传）`;
 });
 
+llmEnabledInput.addEventListener("change", () => {
+  llmFields.classList.toggle("hidden", !llmEnabledInput.checked);
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   hideError();
@@ -53,6 +63,7 @@ form.addEventListener("submit", async (event) => {
   const payload = {
     question,
     max_rows: maxRows,
+    llm: buildLLMConfig(),
   };
 
   submitBtn.disabled = true;
@@ -115,6 +126,28 @@ async function ensureDatabaseUploaded() {
   const tableNames = Array.isArray(json.table_names) ? json.table_names.join(", ") : "";
   dbStatus.textContent = `已上传：${json.filename}（${json.table_count} 张表：${tableNames}）`;
   return uploadedDatabaseId;
+}
+
+function buildLLMConfig() {
+  if (!llmEnabledInput.checked) {
+    return {
+      enabled: false,
+      provider: llmProviderInput.value || "openai",
+    };
+  }
+
+  const provider = (llmProviderInput.value || "openai").trim().toLowerCase();
+  const apiKey = llmApiKeyInput.value.trim();
+  const model = llmModelInput.value.trim();
+  const baseUrl = llmBaseUrlInput.value.trim();
+
+  return {
+    enabled: true,
+    provider,
+    api_key: apiKey || null,
+    model: model || null,
+    base_url: baseUrl || null,
+  };
 }
 
 function showError(message) {

@@ -19,11 +19,31 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 UPLOAD_REGISTRY: dict[str, Path] = {}
 
 
+class LLMConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "openai"
+    api_key: str | None = None
+    model: str | None = None
+    base_url: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_fields(self) -> "LLMConfig":
+        self.provider = self.provider.strip().lower()
+        if self.api_key is not None:
+            self.api_key = self.api_key.strip() or None
+        if self.model is not None:
+            self.model = self.model.strip() or None
+        if self.base_url is not None:
+            self.base_url = self.base_url.strip() or None
+        return self
+
+
 class QueryRequest(BaseModel):
     database_path: str | None = Field(default=None, description="SQLite database file path")
     database_id: str | None = Field(default=None, description="Database id from /v1/upload-db")
     question: str = Field(..., min_length=1)
     max_rows: int = Field(100, ge=1, le=1000)
+    llm: LLMConfig | None = Field(default=None, description="Optional per-request LLM config")
 
     @model_validator(mode="after")
     def validate_database_source(self) -> "QueryRequest":
@@ -71,7 +91,26 @@ def _build_llm_client() -> SQLLLMClient | None:
     )
 
 
-pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=_build_llm_client()))
+default_pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=_build_llm_client()))
+
+
+def _build_request_llm_client(llm_config: LLMConfig | None) -> SQLLLMClient | None:
+    if llm_config is None or not llm_config.enabled:
+        return None
+
+    if llm_config.provider != "openai":
+        raise HTTPException(status_code=400, detail=f"Unsupported LLM provider: {llm_config.provider}")
+
+    settings = load_settings()
+    api_key = llm_config.api_key or settings.openai_api_key
+    if not api_key:
+        raise HTTPException(status_code=400, detail="LLM is enabled but API key is missing.")
+
+    return OpenAIChatCompletionsClient(
+        api_key=api_key,
+        model=llm_config.model or settings.openai_model,
+        base_url=llm_config.base_url or settings.openai_base_url,
+    )
 
 
 def _resolve_database_path(request: QueryRequest) -> str:
@@ -150,6 +189,13 @@ def create_app() -> FastAPI:
             schema = db_client.inspect_schema()
             if not schema.tables:
                 raise HTTPException(status_code=400, detail="Database has no queryable tables.")
+
+            request_llm_client = _build_request_llm_client(request.llm)
+            pipeline = (
+                SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=request_llm_client))
+                if request_llm_client is not None
+                else default_pipeline
+            )
 
             pipeline_result = pipeline.run(
                 question=request.question,

@@ -94,6 +94,33 @@ def test_query_requires_database_source() -> None:
     assert response.status_code == 422
 
 
+def test_query_with_enabled_llm_requires_api_key_when_env_missing(tmp_path: Path, monkeypatch) -> None:
+    fastapi = pytest.importorskip("fastapi")
+    _ = fastapi
+    from fastapi.testclient import TestClient
+
+    from multi_agent_sql_assistant.app import create_app
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    db_path = tmp_path / "llm.sqlite"
+    _prepare_db(db_path)
+
+    app = create_app()
+    client = TestClient(app)
+
+    payload = {
+        "database_path": str(db_path),
+        "question": "How many orders are there?",
+        "max_rows": 20,
+        "llm": {"enabled": True, "provider": "openai"},
+    }
+    response = client.post("/v1/query", json=payload)
+
+    assert response.status_code == 400
+    assert "API key is missing" in response.json()["detail"]
+
+
 def test_index_page_served() -> None:
     fastapi = pytest.importorskip("fastapi")
     _ = fastapi
@@ -109,3 +136,4 @@ def test_index_page_served() -> None:
     assert "Multi-Agent SQL Assistant" in response.text
     assert "/static/styles.css" in response.text
     assert "选择 SQLite 文件" in response.text
+    assert "LLM 配置（可选）" in response.text

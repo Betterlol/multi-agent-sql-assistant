@@ -121,12 +121,14 @@ h1 {
 
 input,
 textarea,
+select,
 button {
   font: inherit;
 }
 
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   border: 1px solid #d7dbdf;
   border-radius: 12px;
@@ -136,10 +138,52 @@ textarea {
 }
 
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.16);
+}
+
+.llm-panel {
+  border: 1px dashed #cbd5e1;
+  background: #f8fbff;
+  border-radius: 14px;
+  padding: 0.8rem;
+  margin-bottom: 0.9rem;
+}
+
+.llm-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.llm-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.switch-row input {
+  width: auto;
+}
+
+.llm-fields {
+  margin-top: 0.75rem;
+}
+
+.llm-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 
 .form-actions {

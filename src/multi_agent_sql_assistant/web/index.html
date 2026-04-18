@@ -56,6 +56,48 @@
             ></textarea>
           </label>
 
+          <section class="llm-panel" aria-label="llm-config">
+            <div class="llm-panel-header">
+              <h3>LLM 配置（可选）</h3>
+              <label class="switch-row">
+                <input id="llm-enabled" type="checkbox" />
+                <span>启用 LLM 生成</span>
+              </label>
+            </div>
+
+            <div id="llm-fields" class="llm-fields hidden">
+              <div class="field-grid">
+                <label class="field">
+                  <span>Provider</span>
+                  <select id="llm-provider" name="llm_provider">
+                    <option value="openai" selected>OpenAI</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Model</span>
+                  <input id="llm-model" name="llm_model" type="text" placeholder="gpt-4o-mini" />
+                </label>
+              </div>
+
+              <div class="field-grid">
+                <label class="field">
+                  <span>API Key</span>
+                  <input id="llm-api-key" name="llm_api_key" type="password" placeholder="sk-..." />
+                </label>
+                <label class="field">
+                  <span>Base URL</span>
+                  <input
+                    id="llm-base-url"
+                    name="llm_base_url"
+                    type="text"
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </label>
+              </div>
+              <small class="llm-hint">不填写 API Key 时，将回退到服务器环境变量中的 `OPENAI_API_KEY`。</small>
+            </div>
+          </section>
+
           <div class="form-actions">
             <button id="submit-btn" type="submit">运行查询</button>
             <p class="hotkey-hint">快捷键：Ctrl/Cmd + Enter</p>

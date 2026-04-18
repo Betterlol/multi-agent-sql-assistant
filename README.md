@@ -84,6 +84,24 @@ curl -X POST http://127.0.0.1:8000/v1/query \
   }'
 ```
 
+也支持在查询请求里传入临时 LLM 配置（覆盖当前请求）：
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "database_id": "YOUR_DATABASE_ID",
+    "question": "List top 5 orders by amount",
+    "max_rows": 100,
+    "llm": {
+      "enabled": true,
+      "provider": "openai",
+      "api_key": "YOUR_OPENAI_KEY",
+      "model": "gpt-4o-mini",
+      "base_url": "https://api.openai.com/v1"
+    }
+  }'
+```
+
 Response fields include:
 - `plan_intent`
 - `selected_table`
@@ -97,6 +115,7 @@ Web UI (`/`) supports:
 - 选择 SQLite 文件并自动上传
 - 输入自然语言问题
 - 配置 `max_rows`
+- 选择并填写 LLM 配置（provider/api key/model/base url）
 - 展示 planner intent、生成 SQL、校验 SQL、warnings
 - 表格渲染查询结果
 
