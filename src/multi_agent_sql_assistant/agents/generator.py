@@ -3,14 +3,34 @@ from __future__ import annotations
 import re
 
 from ..database import DatabaseSchema
+from ..llm import LLMGenerationError, SQLLLMClient
 from ..types import GeneratedQuery, QueryPlan
 
 
 class SQLGeneratorAgent:
+    def __init__(self, llm_client: SQLLLMClient | None = None) -> None:
+        self.llm_client = llm_client
+
     def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
         if not schema.tables:
             raise ValueError("Database has no queryable tables.")
 
+        if self.llm_client is not None:
+            try:
+                llm_query = self.llm_client.generate(question=question, plan=plan, schema=schema)
+                normalized = self._normalize_llm_query(llm_query, schema=schema)
+                return GeneratedQuery(
+                    sql=normalized.sql,
+                    selected_table=normalized.selected_table,
+                    reasoning=f"llm generation -> {normalized.reasoning}",
+                )
+            except (LLMGenerationError, ValueError):
+                # Silent fallback to deterministic heuristic generation.
+                pass
+
+        return self._heuristic_generate(question=question, plan=plan, schema=schema)
+
+    def _heuristic_generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
         table = self._select_table(question=question, plan=plan, schema=schema)
         columns = schema.tables[table]
 
@@ -30,6 +50,31 @@ class SQLGeneratorAgent:
             reasoning = "list intent -> preview records"
 
         return GeneratedQuery(sql=sql, selected_table=table, reasoning=reasoning)
+
+    def _normalize_llm_query(self, query: GeneratedQuery, schema: DatabaseSchema) -> GeneratedQuery:
+        if not query.sql.strip():
+            raise ValueError("LLM returned empty SQL.")
+        lowered = query.sql.lower().strip()
+        if not (lowered.startswith("select") or lowered.startswith("with")):
+            raise ValueError("LLM returned non-read SQL prefix.")
+
+        selected_table = query.selected_table
+        if selected_table not in schema.tables:
+            extracted = re.findall(
+                r'\b(?:from|join)\s+["`]?([a-zA-Z_][\w]*)',
+                query.sql,
+                flags=re.IGNORECASE,
+            )
+            matched = next((item for item in extracted if item in schema.tables), None)
+            if not matched:
+                raise ValueError("LLM selected table is not in schema.")
+            selected_table = matched
+
+        return GeneratedQuery(
+            sql=query.sql.strip().rstrip(";"),
+            selected_table=selected_table,
+            reasoning=query.reasoning,
+        )
 
     def _select_table(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
         lowered = question.lower()

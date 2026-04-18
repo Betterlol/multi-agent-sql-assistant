@@ -6,7 +6,7 @@
 
 ## Agents
 - Planner: intent classification and hint extraction
-- Generator: table/column selection and SQL draft
+- Generator: optional LLM generation with deterministic heuristic fallback
 - Verifier: guardrails (single statement, read-only, table existence, row limits)
 
 ## Safety rules

@@ -3,9 +3,12 @@ from __future__ import annotations
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from .agents.generator import SQLGeneratorAgent
 from .agents.verifier import SQLVerificationError
 from .database import SQLiteDatabaseClient
+from .llm import OpenAIChatCompletionsClient, SQLLLMClient
 from .pipeline import SQLAssistantPipeline
+from .settings import load_settings
 
 
 class QueryRequest(BaseModel):
@@ -25,7 +28,21 @@ class QueryResponse(BaseModel):
     row_count: int
 
 
-pipeline = SQLAssistantPipeline()
+def _build_llm_client() -> SQLLLMClient | None:
+    settings = load_settings()
+    if settings.llm_provider != "openai":
+        return None
+    if not settings.openai_api_key:
+        return None
+
+    return OpenAIChatCompletionsClient(
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
+        base_url=settings.openai_base_url,
+    )
+
+
+pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=_build_llm_client()))
 
 
 def create_app() -> FastAPI:

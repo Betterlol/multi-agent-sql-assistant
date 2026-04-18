@@ -66,6 +66,19 @@ Response fields include:
 - `warnings`
 - `columns`, `rows`, `row_count`
 
+## Optional LLM mode (OpenAI)
+By default, SQL generation is heuristic. To enable LLM-backed generation with automatic fallback:
+
+```bash
+export SQL_ASSISTANT_LLM_PROVIDER=openai
+export OPENAI_API_KEY=your_api_key
+# optional
+export SQL_ASSISTANT_OPENAI_MODEL=gpt-4o-mini
+export SQL_ASSISTANT_OPENAI_BASE_URL=https://api.openai.com/v1
+```
+
+If LLM generation fails for any reason, the service falls back to deterministic heuristic generation.
+
 ## Current limitations
 - SQLite only
 - Heuristic SQL generation (no LLM provider integration yet)
