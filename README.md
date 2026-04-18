@@ -41,15 +41,14 @@ pytest -q
 uvicorn src.main:app --reload
 ```
 
-启动后访问 `http://127.0.0.1:8000/` 可使用内置前端交互页面。
+启动后访问 `http://127.0.0.1:8000/` 可使用内置前端交互页面（支持直接选择 SQLite 文件上传）。
 
 ## Prepare demo database
 ```bash
 python scripts/init_sample_db.py --db-path sample_data/sample.sqlite --orders 120 --seed 2026
 ```
 
-然后在前端页面把数据库路径填为项目内绝对路径，例如：
-`/mnt/e/Git/warehouse/Working/agent/github-local-repos/multi-agent-sql-assistant/sample_data/sample.sqlite`
+前端页面现在可直接选择该文件进行上传，不需要手填路径。
 
 ## API usage
 ### Health
@@ -68,6 +67,23 @@ curl -X POST http://127.0.0.1:8000/v1/query \
   }'
 ```
 
+### Upload database (for frontend / file mode)
+```bash
+curl -X POST http://127.0.0.1:8000/v1/upload-db \
+  -F "file=@sample_data/sample.sqlite"
+```
+
+上传成功后可使用 `database_id` 查询：
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "database_id": "YOUR_DATABASE_ID",
+    "question": "How many orders are there?",
+    "max_rows": 100
+  }'
+```
+
 Response fields include:
 - `plan_intent`
 - `selected_table`
@@ -78,7 +94,7 @@ Response fields include:
 
 ## Frontend interaction
 Web UI (`/`) supports:
-- 输入 SQLite 数据库路径
+- 选择 SQLite 文件并自动上传
 - 输入自然语言问题
 - 配置 `max_rows`
 - 展示 planner intent、生成 SQL、校验 SQL、warnings

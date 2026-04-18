@@ -114,6 +114,11 @@ h1 {
   color: var(--muted);
 }
 
+.file-status {
+  color: #0f766e;
+  font-size: 0.8rem;
+}
+
 input,
 textarea,
 button {

@@ -8,6 +8,7 @@ dependencies = [
   "fastapi>=0.111.0",
   "uvicorn>=0.30.0",
   "pydantic>=2.7.0",
+  "python-multipart>=0.0.9",
   "sqlglot>=26.0.0",
 ]
 

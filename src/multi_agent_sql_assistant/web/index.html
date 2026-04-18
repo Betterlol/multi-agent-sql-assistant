@@ -21,7 +21,7 @@
         <p class="hero-kicker">Agent Workflow Demo</p>
         <h1>Multi-Agent SQL Assistant</h1>
         <p class="hero-subtitle">
-          输入 SQLite 数据库路径和自然语言问题，系统将执行 Planner -> Generator -> Verifier 流程并返回可执行结果。
+          选择 SQLite 数据库文件并输入自然语言问题，系统将执行 Planner -> Generator -> Verifier 流程并返回可执行结果。
         </p>
       </header>
 
@@ -29,14 +29,15 @@
         <form id="query-form" novalidate>
           <div class="field-grid">
             <label class="field">
-              <span>SQLite 数据库路径</span>
+              <span>选择 SQLite 文件</span>
               <input
-                id="database-path"
-                name="database_path"
-                type="text"
-                placeholder="例如：/path/to/sample.sqlite"
+                id="database-file"
+                name="database_file"
+                type="file"
+                accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3"
                 required
               />
+              <small id="database-status" class="file-status">尚未选择文件</small>
             </label>
             <label class="field">
               <span>最大返回行数</span>

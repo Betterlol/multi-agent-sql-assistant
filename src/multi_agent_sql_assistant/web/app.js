@@ -13,9 +13,13 @@ const verifiedSQL = document.getElementById("verified-sql");
 const warningsList = document.getElementById("warnings");
 const resultTable = document.getElementById("result-table");
 
-const dbPathInput = document.getElementById("database-path");
+const dbFileInput = document.getElementById("database-file");
+const dbStatus = document.getElementById("database-status");
 const questionInput = document.getElementById("question");
 const maxRowsInput = document.getElementById("max-rows");
+
+let uploadedDatabaseId = null;
+let uploadedFileFingerprint = null;
 
 questionInput.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
@@ -24,26 +28,40 @@ questionInput.addEventListener("keydown", (event) => {
   }
 });
 
+dbFileInput.addEventListener("change", () => {
+  uploadedDatabaseId = null;
+  uploadedFileFingerprint = null;
+  const file = dbFileInput.files?.[0];
+  if (!file) {
+    dbStatus.textContent = "尚未选择文件";
+    return;
+  }
+  dbStatus.textContent = `已选择：${file.name}（待上传）`;
+});
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   hideError();
 
-  const payload = {
-    database_path: dbPathInput.value.trim(),
-    question: questionInput.value.trim(),
-    max_rows: Number(maxRowsInput.value),
-  };
-
-  if (!payload.database_path || !payload.question || !Number.isFinite(payload.max_rows)) {
-    showError("请填写完整参数（数据库路径、问题、最大返回行数）。");
+  const question = questionInput.value.trim();
+  const maxRows = Number(maxRowsInput.value);
+  if (!question || !Number.isFinite(maxRows)) {
+    showError("请填写完整参数（数据库文件、问题、最大返回行数）。");
     return;
   }
+
+  const payload = {
+    question,
+    max_rows: maxRows,
+  };
 
   submitBtn.disabled = true;
   submitBtn.textContent = "执行中...";
   const start = performance.now();
 
   try {
+    payload.database_id = await ensureDatabaseUploaded();
+
     const response = await fetch("/v1/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -66,6 +84,38 @@ form.addEventListener("submit", async (event) => {
     submitBtn.textContent = "运行查询";
   }
 });
+
+async function ensureDatabaseUploaded() {
+  const file = dbFileInput.files?.[0];
+  if (!file) {
+    throw new Error("请先选择 SQLite 文件（.sqlite/.sqlite3/.db）");
+  }
+
+  const fingerprint = `${file.name}:${file.size}:${file.lastModified}`;
+  if (uploadedDatabaseId && uploadedFileFingerprint === fingerprint) {
+    return uploadedDatabaseId;
+  }
+
+  dbStatus.textContent = `上传中：${file.name}...`;
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch("/v1/upload-db", {
+    method: "POST",
+    body: formData,
+  });
+  const json = await response.json();
+  if (!response.ok) {
+    const detail = typeof json.detail === "string" ? json.detail : "数据库上传失败";
+    throw new Error(detail);
+  }
+
+  uploadedDatabaseId = json.database_id;
+  uploadedFileFingerprint = fingerprint;
+  const tableNames = Array.isArray(json.table_names) ? json.table_names.join(", ") : "";
+  dbStatus.textContent = `已上传：${json.filename}（${json.table_count} 张表：${tableNames}）`;
+  return uploadedDatabaseId;
+}
 
 function showError(message) {
   errorBox.textContent = message;
