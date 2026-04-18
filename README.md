@@ -1,80 +1,77 @@
 # Multi-Agent SQL Assistant
 
-Natural language to SQL with Planner/Generator/Verifier agents, schema-linking, and execution safety checks.
+Natural language to SQL with a three-stage pipeline:
+- Planner Agent
+- SQL Generator Agent
+- Verifier Agent (safety guardrails)
 
-## Status
-- Stage: bootstrap
-- Local repo initialized: yes
+This MVP runs on SQLite and exposes a FastAPI endpoint for query generation and execution.
 
-## Planned Structure
-- \: application source code
-- \: automated tests
-- \: architecture, milestones, ADRs
-- \: helper scripts
-- \: CI workflows
+## Why this project
+This repository demonstrates practical agent engineering for real-world data tasks:
+- Structured multi-agent orchestration (plan -> generate -> verify)
+- Query safety checks (read-only, single statement, table validation, limit enforcement)
+- End-to-end API integration with executable SQL results
 
-## Quick Start
-\\Requirement already satisfied: pip in ./.venv/lib/python3.13/site-packages (25.2)
+## Architecture
+1. Planner analyzes question intent (`count`, `top`, `list`) and extracts hints.
+2. Generator selects a table via schema-linking heuristics and drafts SQL.
+3. Verifier blocks dangerous SQL and enforces a safe row limit.
+4. SQLite client executes verified SQL and returns rows.
 
-==================================== ERRORS ====================================
-_ ERROR collecting github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py _
-ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py:1: in <module>
-    from src.main import main
-E   ModuleNotFoundError: No module named 'src'
-_ ERROR collecting github-local-repos/ecommerce-react-agent/tests/test_smoke.py _
-ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/ecommerce-react-agent/tests/test_smoke.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-github-local-repos/ecommerce-react-agent/tests/test_smoke.py:1: in <module>
-    from src.main import main
-E   ModuleNotFoundError: No module named 'src'
-_ ERROR collecting github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py _
-ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py:1: in <module>
-    from src.main import main
-E   ModuleNotFoundError: No module named 'src'
-_ ERROR collecting github-local-repos/promptops-eval-platform/tests/test_smoke.py _
-ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/promptops-eval-platform/tests/test_smoke.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-github-local-repos/promptops-eval-platform/tests/test_smoke.py:1: in <module>
-    from src.main import main
-E   ModuleNotFoundError: No module named 'src'
-_ ERROR collecting github-local-repos/rag-reliability-bench/tests/test_smoke.py _
-ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/rag-reliability-bench/tests/test_smoke.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-github-local-repos/rag-reliability-bench/tests/test_smoke.py:1: in <module>
-    from src.main import main
-E   ModuleNotFoundError: No module named 'src'
-=========================== short test summary info ============================
-ERROR github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py
-ERROR github-local-repos/ecommerce-react-agent/tests/test_smoke.py
-ERROR github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py
-ERROR github-local-repos/promptops-eval-platform/tests/test_smoke.py
-ERROR github-local-repos/rag-reliability-bench/tests/test_smoke.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!!
-5 errors in 1.83s\
+## Project structure
+- `src/multi_agent_sql_assistant/agents/`: planner, generator, verifier
+- `src/multi_agent_sql_assistant/database.py`: schema inspection + SQL execution
+- `src/multi_agent_sql_assistant/pipeline.py`: orchestrates agents
+- `src/multi_agent_sql_assistant/app.py`: FastAPI endpoints
+- `tests/`: unit and API tests
+- `docs/`: roadmap and architecture notes
 
-## Next Milestones
-See [docs/ROADMAP.md](docs/ROADMAP.md).
+## Quick start
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -e .[dev]
+
+# run tests
+pytest -q
+
+# run API
+uvicorn src.main:app --reload
+```
+
+## API usage
+### Health
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+### Query endpoint
+```bash
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "database_path": "./sample.sqlite",
+    "question": "How many orders are there?",
+    "max_rows": 100
+  }'
+```
+
+Response fields include:
+- `plan_intent`
+- `selected_table`
+- `generated_sql`
+- `verified_sql`
+- `warnings`
+- `columns`, `rows`, `row_count`
+
+## Current limitations
+- SQLite only
+- Heuristic SQL generation (no LLM provider integration yet)
+- Basic schema-linking strategy
+
+## Next steps
+- Add LLM-backed generator with fallback to heuristic mode
+- Add SQL AST-level validation
+- Add benchmark suite for accuracy/latency/cost trade-offs
