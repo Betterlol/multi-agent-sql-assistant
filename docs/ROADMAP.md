@@ -6,7 +6,7 @@
 - [x] Add smoke test
 
 ## Phase 2 - MVP
-- [ ] Implement core service in src/
+- [ ] Implement core service in \
 - [ ] Add integration tests
 - [ ] Add architecture diagram and API contract
 

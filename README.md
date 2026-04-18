@@ -7,17 +7,74 @@ Natural language to SQL with Planner/Generator/Verifier agents, schema-linking, 
 - Local repo initialized: yes
 
 ## Planned Structure
-- src/: application source code
-- tests/: automated tests
-- docs/: architecture, milestones, ADRs
-- scripts/: helper scripts
-- .github/workflows/: CI workflows
+- \: application source code
+- \: automated tests
+- \: architecture, milestones, ADRs
+- \: helper scripts
+- \: CI workflows
 
 ## Quick Start
-1. Create virtual env: python3 -m venv .venv
-2. Activate env: source .venv/bin/activate
-3. Install test dependency: pip install -U pip pytest
-4. Run tests: pytest -q
+\\Requirement already satisfied: pip in ./.venv/lib/python3.13/site-packages (25.2)
+
+==================================== ERRORS ====================================
+_ ERROR collecting github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py _
+ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py:1: in <module>
+    from src.main import main
+E   ModuleNotFoundError: No module named 'src'
+_ ERROR collecting github-local-repos/ecommerce-react-agent/tests/test_smoke.py _
+ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/ecommerce-react-agent/tests/test_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+github-local-repos/ecommerce-react-agent/tests/test_smoke.py:1: in <module>
+    from src.main import main
+E   ModuleNotFoundError: No module named 'src'
+_ ERROR collecting github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py _
+ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py:1: in <module>
+    from src.main import main
+E   ModuleNotFoundError: No module named 'src'
+_ ERROR collecting github-local-repos/promptops-eval-platform/tests/test_smoke.py _
+ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/promptops-eval-platform/tests/test_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+github-local-repos/promptops-eval-platform/tests/test_smoke.py:1: in <module>
+    from src.main import main
+E   ModuleNotFoundError: No module named 'src'
+_ ERROR collecting github-local-repos/rag-reliability-bench/tests/test_smoke.py _
+ImportError while importing test module '/mnt/e/Git/warehouse/Working/agent/github-local-repos/rag-reliability-bench/tests/test_smoke.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/home/YOUKNOWWHO/miniconda3/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+github-local-repos/rag-reliability-bench/tests/test_smoke.py:1: in <module>
+    from src.main import main
+E   ModuleNotFoundError: No module named 'src'
+=========================== short test summary info ============================
+ERROR github-local-repos/ai-accelerated-dev-lab/tests/test_smoke.py
+ERROR github-local-repos/ecommerce-react-agent/tests/test_smoke.py
+ERROR github-local-repos/multi-agent-sql-assistant/tests/test_smoke.py
+ERROR github-local-repos/promptops-eval-platform/tests/test_smoke.py
+ERROR github-local-repos/rag-reliability-bench/tests/test_smoke.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 5 errors during collection !!!!!!!!!!!!!!!!!!!!
+5 errors in 1.83s\
 
 ## Next Milestones
-See docs/ROADMAP.md
+See [docs/ROADMAP.md](docs/ROADMAP.md).
