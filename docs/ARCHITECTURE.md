@@ -10,7 +10,7 @@
 - Verifier: guardrails (single statement, read-only, table existence, row limits)
 
 ## Safety rules
-- Reject non-SELECT and multi-statement SQL
-- Block mutating keywords (INSERT/UPDATE/DELETE/etc.)
+- Parse SQL into AST via `sqlglot`
+- Reject non-query / mutating statements and multi-statement input
 - Reject unknown tables referenced in FROM/JOIN
 - Enforce configurable LIMIT caps

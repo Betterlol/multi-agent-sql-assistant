@@ -16,7 +16,7 @@ This repository demonstrates practical agent engineering for real-world data tas
 ## Architecture
 1. Planner analyzes question intent (`count`, `top`, `list`) and extracts hints.
 2. Generator selects a table via schema-linking heuristics and drafts SQL.
-3. Verifier blocks dangerous SQL and enforces a safe row limit.
+3. Verifier uses SQL AST parsing (`sqlglot`) to block dangerous SQL and enforce a safe row limit.
 4. SQLite client executes verified SQL and returns rows.
 
 ## Project structure
@@ -42,6 +42,14 @@ uvicorn src.main:app --reload
 ```
 
 启动后访问 `http://127.0.0.1:8000/` 可使用内置前端交互页面。
+
+## Prepare demo database
+```bash
+python scripts/init_sample_db.py --db-path sample_data/sample.sqlite --orders 120 --seed 2026
+```
+
+然后在前端页面把数据库路径填为项目内绝对路径，例如：
+`/mnt/e/Git/warehouse/Working/agent/github-local-repos/multi-agent-sql-assistant/sample_data/sample.sqlite`
 
 ## API usage
 ### Health
@@ -93,10 +101,9 @@ If LLM generation fails for any reason, the service falls back to deterministic 
 
 ## Current limitations
 - SQLite only
-- Heuristic SQL generation (no LLM provider integration yet)
-- Basic schema-linking strategy
+- LLM generation still depends on prompt quality
+- Schema-linking is heuristic-first (LLM optional)
 
 ## Next steps
-- Add LLM-backed generator with fallback to heuristic mode
-- Add SQL AST-level validation
+- Add execution plan introspection and explain endpoint
 - Add benchmark suite for accuracy/latency/cost trade-offs

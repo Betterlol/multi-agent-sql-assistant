@@ -24,3 +24,6 @@ Thumbs.db
 build/
 dist/
 *.log
+
+# Local demo data
+sample_data/*.sqlite
