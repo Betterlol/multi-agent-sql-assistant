@@ -7,6 +7,12 @@ Natural language to SQL with a three-stage pipeline:
 
 This MVP runs on SQLite and exposes a FastAPI endpoint for query generation and execution.
 
+## MVP status (2026-04-18)
+- Release: `MVP v0.1`
+- Current state: feature-complete for MVP and temporarily paused for new scope expansion.
+- Test status: `20 passed` (local).
+- Delivery surfaces: Web UI, REST API, Docker compose run, sample DB bootstrap script.
+
 ## Why this project
 This repository demonstrates practical agent engineering for real-world data tasks:
 - Structured multi-agent orchestration (plan -> generate -> verify)
@@ -162,6 +168,7 @@ Then open:
 - LLM generation still depends on prompt quality
 - Schema-linking is heuristic-first (LLM optional)
 
-## Next steps
-- Add execution plan introspection and explain endpoint
-- Add benchmark suite for accuracy/latency/cost trade-offs
+## Post-MVP backlog
+- Add benchmark suite and regression report for accuracy/latency/cost
+- Add execution-plan introspection and explain endpoint
+- Add formal release notes document
