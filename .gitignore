@@ -28,3 +28,4 @@ dist/
 # Local demo data
 sample_data/*.sqlite
 runtime_uploads/
+.env

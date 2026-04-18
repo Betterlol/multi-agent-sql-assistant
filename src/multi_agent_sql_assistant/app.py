@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
-from uuid import uuid4
+from time import perf_counter, time
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -12,11 +13,10 @@ from .agents.generator import SQLGeneratorAgent
 from .agents.verifier import SQLVerificationError
 from .database import SQLiteDatabaseClient
 from .llm import OpenAIChatCompletionsClient, SQLLLMClient
+from .observability import MetricsStore, build_logger, log_event
 from .pipeline import SQLAssistantPipeline
-from .settings import load_settings
-
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
-UPLOAD_REGISTRY: dict[str, Path] = {}
+from .settings import AppSettings, load_settings
+from .upload_registry import UploadRegistry
 
 
 class LLMConfig(BaseModel):
@@ -60,6 +60,7 @@ class QueryRequest(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    request_id: str
     plan_intent: str
     selected_table: str
     generated_sql: str
@@ -71,14 +72,27 @@ class QueryResponse(BaseModel):
 
 
 class UploadDatabaseResponse(BaseModel):
+    request_id: str
     database_id: str
     filename: str
     table_names: list[str]
     table_count: int
+    expires_at: int
 
 
-def _build_llm_client() -> SQLLLMClient | None:
-    settings = load_settings()
+class MetricsResponse(BaseModel):
+    uploads_total: int
+    uploads_failed: int
+    uploads_active: int
+    queries_total: int
+    queries_success: int
+    queries_failed: int
+    llm_enabled_queries: int
+    llm_fallback_queries: int
+    latency_ms: dict[str, float | int]
+
+
+def _build_env_llm_client(settings: AppSettings) -> SQLLLMClient | None:
     if settings.llm_provider != "openai":
         return None
     if not settings.openai_api_key:
@@ -91,17 +105,13 @@ def _build_llm_client() -> SQLLLMClient | None:
     )
 
 
-default_pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=_build_llm_client()))
-
-
-def _build_request_llm_client(llm_config: LLMConfig | None) -> SQLLLMClient | None:
+def _build_request_llm_client(llm_config: LLMConfig | None, settings: AppSettings) -> SQLLLMClient | None:
     if llm_config is None or not llm_config.enabled:
         return None
 
     if llm_config.provider != "openai":
         raise HTTPException(status_code=400, detail=f"Unsupported LLM provider: {llm_config.provider}")
 
-    settings = load_settings()
     api_key = llm_config.api_key or settings.openai_api_key
     if not api_key:
         raise HTTPException(status_code=400, detail="LLM is enabled but API key is missing.")
@@ -113,26 +123,42 @@ def _build_request_llm_client(llm_config: LLMConfig | None) -> SQLLLMClient | No
     )
 
 
-def _resolve_database_path(request: QueryRequest) -> str:
+def _looks_like_sqlite(payload: bytes) -> bool:
+    if len(payload) < 16:
+        return False
+    return payload.startswith(b"SQLite format 3\x00")
+
+
+def _resolve_database_path(request: QueryRequest, registry: UploadRegistry) -> str:
     if request.database_path:
         return request.database_path
 
     assert request.database_id is not None
-    resolved = UPLOAD_REGISTRY.get(request.database_id)
+    resolved = registry.resolve_path(request.database_id)
     if resolved is None:
         raise HTTPException(
             status_code=404,
-            detail="Uploaded database not found. Please upload file again.",
+            detail="Uploaded database not found or expired. Please upload file again.",
         )
     return str(resolved)
 
 
+def _new_request_id() -> str:
+    return hex(int(time() * 1000000))[2:]
+
+
 def create_app() -> FastAPI:
+    settings = load_settings()
+    logger = build_logger(settings.log_level)
+    metrics = MetricsStore()
+    upload_registry = UploadRegistry(settings.upload_root, settings.upload_ttl_seconds)
+    upload_registry.cleanup_expired()
+
+    env_llm_client = _build_env_llm_client(settings)
+    default_pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=env_llm_client))
+
     app = FastAPI(title="Multi-Agent SQL Assistant", version="0.1.0")
     web_root = Path(__file__).resolve().parent / "web"
-    upload_root = Path.cwd() / "runtime_uploads"
-    upload_root.mkdir(parents=True, exist_ok=True)
-
     app.mount("/static", StaticFiles(directory=web_root), name="static")
 
     @app.get("/")
@@ -143,59 +169,135 @@ def create_app() -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/metrics", response_model=MetricsResponse)
+    def get_metrics() -> MetricsResponse:
+        snapshot = metrics.snapshot(uploads_active=upload_registry.active_count())
+        return MetricsResponse(**snapshot)
+
     @app.post("/v1/upload-db", response_model=UploadDatabaseResponse)
     async def upload_db(file: UploadFile = File(...)) -> UploadDatabaseResponse:
+        request_id = _new_request_id()
+        started = perf_counter()
+
         filename = file.filename or "uploaded.sqlite"
         suffix = Path(filename).suffix.lower()
         if suffix not in {".sqlite", ".sqlite3", ".db"}:
+            metrics.record_upload(success=False)
+            log_event(
+                logger,
+                logging.WARNING,
+                "upload.rejected_extension",
+                request_id=request_id,
+                filename=filename,
+            )
             raise HTTPException(
                 status_code=400,
                 detail="Only SQLite files are supported (.sqlite, .sqlite3, .db).",
             )
 
-        payload = await file.read(MAX_UPLOAD_BYTES + 1)
+        payload = await file.read(settings.upload_max_bytes + 1)
         await file.close()
-        if len(payload) > MAX_UPLOAD_BYTES:
-            raise HTTPException(status_code=400, detail=f"File is too large. Max {MAX_UPLOAD_BYTES} bytes.")
+        if len(payload) > settings.upload_max_bytes:
+            metrics.record_upload(success=False)
+            log_event(
+                logger,
+                logging.WARNING,
+                "upload.rejected_size",
+                request_id=request_id,
+                filename=filename,
+                size_bytes=len(payload),
+                max_bytes=settings.upload_max_bytes,
+            )
+            raise HTTPException(status_code=400, detail=f"File is too large. Max {settings.upload_max_bytes} bytes.")
 
-        database_id = uuid4().hex
-        stored_path = upload_root / f"{database_id}.sqlite"
-        stored_path.write_bytes(payload)
+        if not _looks_like_sqlite(payload):
+            metrics.record_upload(success=False)
+            log_event(
+                logger,
+                logging.WARNING,
+                "upload.rejected_magic",
+                request_id=request_id,
+                filename=filename,
+            )
+            raise HTTPException(status_code=400, detail="Uploaded file is not a valid SQLite database file.")
 
+        record = upload_registry.register(filename=filename, payload=payload)
         try:
-            db_client = SQLiteDatabaseClient(str(stored_path))
+            db_client = SQLiteDatabaseClient(str(record.stored_path))
             schema = db_client.inspect_schema()
         except Exception as exc:
-            stored_path.unlink(missing_ok=True)
+            upload_registry.remove(record.database_id)
+            metrics.record_upload(success=False)
+            log_event(
+                logger,
+                logging.WARNING,
+                "upload.invalid_sqlite",
+                request_id=request_id,
+                filename=filename,
+                error=str(exc),
+            )
             raise HTTPException(status_code=400, detail=f"Invalid SQLite file: {exc}") from exc
 
         if not schema.tables:
-            stored_path.unlink(missing_ok=True)
+            upload_registry.remove(record.database_id)
+            metrics.record_upload(success=False)
+            log_event(
+                logger,
+                logging.WARNING,
+                "upload.empty_schema",
+                request_id=request_id,
+                filename=filename,
+            )
             raise HTTPException(status_code=400, detail="Uploaded database has no queryable tables.")
 
-        UPLOAD_REGISTRY[database_id] = stored_path
-        return UploadDatabaseResponse(
-            database_id=database_id,
+        metrics.record_upload(success=True)
+        elapsed_ms = round((perf_counter() - started) * 1000, 2)
+        log_event(
+            logger,
+            logging.INFO,
+            "upload.success",
+            request_id=request_id,
             filename=filename,
+            database_id=record.database_id,
+            size_bytes=record.size_bytes,
+            table_count=len(schema.tables),
+            elapsed_ms=elapsed_ms,
+        )
+
+        return UploadDatabaseResponse(
+            request_id=request_id,
+            database_id=record.database_id,
+            filename=record.filename,
             table_names=sorted(schema.tables.keys()),
             table_count=len(schema.tables),
+            expires_at=record.expires_at,
         )
 
     @app.post("/v1/query", response_model=QueryResponse)
     def query_sql(request: QueryRequest) -> QueryResponse:
+        request_id = _new_request_id()
+        started = perf_counter()
+
+        llm_enabled = False
+        llm_fallback = False
+        status = "error"
         try:
-            database_path = _resolve_database_path(request)
+            database_path = _resolve_database_path(request, upload_registry)
             db_client = SQLiteDatabaseClient(database_path)
             schema = db_client.inspect_schema()
             if not schema.tables:
                 raise HTTPException(status_code=400, detail="Database has no queryable tables.")
 
-            request_llm_client = _build_request_llm_client(request.llm)
-            pipeline = (
-                SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=request_llm_client))
-                if request_llm_client is not None
-                else default_pipeline
-            )
+            if request.llm is None:
+                llm_enabled = env_llm_client is not None
+                pipeline = default_pipeline
+            elif request.llm.enabled:
+                request_llm_client = _build_request_llm_client(request.llm, settings)
+                llm_enabled = True
+                pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=request_llm_client))
+            else:
+                llm_enabled = False
+                pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=None))
 
             pipeline_result = pipeline.run(
                 question=request.question,
@@ -206,6 +308,22 @@ def create_app() -> FastAPI:
                 pipeline_result.verified_query.sql,
                 max_rows=request.max_rows,
             )
+
+            llm_fallback = llm_enabled and not pipeline_result.generated_query.reasoning.startswith(
+                "llm generation"
+            )
+            status = "ok"
+            return QueryResponse(
+                request_id=request_id,
+                plan_intent=pipeline_result.plan.intent,
+                selected_table=pipeline_result.generated_query.selected_table,
+                generated_sql=pipeline_result.generated_query.sql,
+                verified_sql=pipeline_result.verified_query.sql,
+                warnings=pipeline_result.verified_query.warnings,
+                columns=query_result.columns,
+                rows=query_result.rows,
+                row_count=query_result.row_count,
+            )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except SQLVerificationError as exc:
@@ -214,16 +332,25 @@ def create_app() -> FastAPI:
             raise
         except Exception as exc:  # pragma: no cover - defensive fallback for API
             raise HTTPException(status_code=500, detail=f"Internal error: {exc}") from exc
-
-        return QueryResponse(
-            plan_intent=pipeline_result.plan.intent,
-            selected_table=pipeline_result.generated_query.selected_table,
-            generated_sql=pipeline_result.generated_query.sql,
-            verified_sql=pipeline_result.verified_query.sql,
-            warnings=pipeline_result.verified_query.warnings,
-            columns=query_result.columns,
-            rows=query_result.rows,
-            row_count=query_result.row_count,
-        )
+        finally:
+            elapsed_ms = round((perf_counter() - started) * 1000, 2)
+            success = status == "ok"
+            metrics.record_query(
+                success=success,
+                latency_ms=elapsed_ms,
+                llm_enabled=llm_enabled,
+                llm_fallback=llm_fallback,
+            )
+            level = logging.INFO if success else logging.WARNING
+            log_event(
+                logger,
+                level,
+                "query.completed",
+                request_id=request_id,
+                status=status,
+                llm_enabled=llm_enabled,
+                llm_fallback=llm_fallback,
+                elapsed_ms=elapsed_ms,
+            )
 
     return app

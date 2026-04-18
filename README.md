@@ -24,6 +24,8 @@ This repository demonstrates practical agent engineering for real-world data tas
 - `src/multi_agent_sql_assistant/database.py`: schema inspection + SQL execution
 - `src/multi_agent_sql_assistant/pipeline.py`: orchestrates agents
 - `src/multi_agent_sql_assistant/app.py`: FastAPI endpoints
+- `src/multi_agent_sql_assistant/upload_registry.py`: persistent upload registry with TTL cleanup
+- `src/multi_agent_sql_assistant/observability.py`: structured logs and in-memory metrics
 - `tests/`: unit and API tests
 - `docs/`: roadmap and architecture notes
 
@@ -54,6 +56,11 @@ python scripts/init_sample_db.py --db-path sample_data/sample.sqlite --orders 12
 ### Health
 ```bash
 curl http://127.0.0.1:8000/health
+```
+
+### Metrics
+```bash
+curl http://127.0.0.1:8000/metrics
 ```
 
 ### Query endpoint
@@ -121,6 +128,12 @@ Web UI (`/`) supports:
 
 默认请求接口：`POST /v1/query`
 
+## Upload lifecycle
+- Uploaded files are persisted under `runtime_uploads/files/`.
+- Upload metadata is persisted in `runtime_uploads/registry.sqlite`.
+- Expired uploads are cleaned automatically based on TTL (`SQL_ASSISTANT_UPLOAD_TTL_SECONDS`).
+- Default TTL: 86400 seconds (24 hours).
+
 ## Optional LLM mode (OpenAI)
 By default, SQL generation is heuristic. To enable LLM-backed generation with automatic fallback:
 
@@ -133,6 +146,16 @@ export SQL_ASSISTANT_OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
 If LLM generation fails for any reason, the service falls back to deterministic heuristic generation.
+
+## Docker deployment
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then open:
+- `http://127.0.0.1:8000/` (web UI)
+- `http://127.0.0.1:8000/metrics` (runtime metrics)
 
 ## Current limitations
 - SQLite only

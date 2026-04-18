@@ -36,6 +36,7 @@ def test_query_endpoint_returns_rows(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     data = response.json()
+    assert "request_id" in data
     assert data["selected_table"] == "orders"
     assert data["row_count"] >= 1
     assert "verified_sql" in data
@@ -61,8 +62,10 @@ def test_upload_then_query_by_database_id(tmp_path: Path) -> None:
     )
     assert upload_response.status_code == 200
     uploaded = upload_response.json()
+    assert "request_id" in uploaded
     assert "database_id" in uploaded
     assert uploaded["table_count"] >= 1
+    assert "expires_at" in uploaded
 
     query_payload = {
         "database_id": uploaded["database_id"],
@@ -72,6 +75,7 @@ def test_upload_then_query_by_database_id(tmp_path: Path) -> None:
     query_response = client.post("/v1/query", json=query_payload)
     assert query_response.status_code == 200
     data = query_response.json()
+    assert "request_id" in data
     assert data["selected_table"] == "orders"
     assert data["row_count"] >= 1
 
@@ -137,3 +141,45 @@ def test_index_page_served() -> None:
     assert "/static/styles.css" in response.text
     assert "选择 SQLite 文件" in response.text
     assert "LLM 配置（可选）" in response.text
+
+
+def test_metrics_endpoint_tracks_query_and_upload(tmp_path: Path) -> None:
+    fastapi = pytest.importorskip("fastapi")
+    _ = fastapi
+    from fastapi.testclient import TestClient
+
+    from multi_agent_sql_assistant.app import create_app
+
+    db_path = tmp_path / "metrics.sqlite"
+    _prepare_db(db_path)
+    db_bytes = db_path.read_bytes()
+
+    app = create_app()
+    client = TestClient(app)
+
+    before = client.get("/metrics")
+    assert before.status_code == 200
+    before_metrics = before.json()
+
+    upload = client.post(
+        "/v1/upload-db",
+        files={"file": ("metrics.sqlite", BytesIO(db_bytes), "application/octet-stream")},
+    )
+    assert upload.status_code == 200
+    upload_data = upload.json()
+
+    query = client.post(
+        "/v1/query",
+        json={
+            "database_id": upload_data["database_id"],
+            "question": "How many orders are there?",
+            "max_rows": 20,
+        },
+    )
+    assert query.status_code == 200
+
+    after = client.get("/metrics")
+    assert after.status_code == 200
+    after_metrics = after.json()
+    assert after_metrics["uploads_total"] >= before_metrics["uploads_total"] + 1
+    assert after_metrics["queries_total"] >= before_metrics["queries_total"] + 1
