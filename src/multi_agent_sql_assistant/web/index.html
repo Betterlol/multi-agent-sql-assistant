@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Agent SQL Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="bg-shape shape-a" aria-hidden="true"></div>
+    <div class="bg-shape shape-b" aria-hidden="true"></div>
+
+    <main class="container">
+      <header class="hero">
+        <p class="hero-kicker">Agent Workflow Demo</p>
+        <h1>Multi-Agent SQL Assistant</h1>
+        <p class="hero-subtitle">
+          输入 SQLite 数据库路径和自然语言问题，系统将执行 Planner -> Generator -> Verifier 流程并返回可执行结果。
+        </p>
+      </header>
+
+      <section class="panel panel-form" aria-label="query-form">
+        <form id="query-form" novalidate>
+          <div class="field-grid">
+            <label class="field">
+              <span>SQLite 数据库路径</span>
+              <input
+                id="database-path"
+                name="database_path"
+                type="text"
+                placeholder="例如：/path/to/sample.sqlite"
+                required
+              />
+            </label>
+            <label class="field">
+              <span>最大返回行数</span>
+              <input id="max-rows" name="max_rows" type="number" value="100" min="1" max="1000" required />
+            </label>
+          </div>
+
+          <label class="field">
+            <span>自然语言问题</span>
+            <textarea
+              id="question"
+              name="question"
+              rows="3"
+              placeholder="例如：List top 5 orders by amount"
+              required
+            ></textarea>
+          </label>
+
+          <div class="form-actions">
+            <button id="submit-btn" type="submit">运行查询</button>
+            <p class="hotkey-hint">快捷键：Ctrl/Cmd + Enter</p>
+          </div>
+        </form>
+      </section>
+
+      <section id="error-box" class="panel panel-error hidden" role="alert"></section>
+
+      <section id="result-panel" class="panel panel-result hidden" aria-live="polite">
+        <div class="result-header">
+          <h2>执行结果</h2>
+          <span id="latency-pill" class="latency-pill">- ms</span>
+        </div>
+
+        <div class="meta-grid">
+          <article class="meta-card">
+            <h3>Plan</h3>
+            <p id="plan-intent">-</p>
+          </article>
+          <article class="meta-card">
+            <h3>Selected Table</h3>
+            <p id="selected-table">-</p>
+          </article>
+          <article class="meta-card">
+            <h3>Row Count</h3>
+            <p id="row-count">-</p>
+          </article>
+        </div>
+
+        <div class="sql-grid">
+          <article>
+            <h3>Generated SQL</h3>
+            <pre id="generated-sql"></pre>
+          </article>
+          <article>
+            <h3>Verified SQL</h3>
+            <pre id="verified-sql"></pre>
+          </article>
+        </div>
+
+        <article>
+          <h3>Warnings</h3>
+          <ul id="warnings" class="warning-list"></ul>
+        </article>
+
+        <article>
+          <h3>Rows</h3>
+          <div class="table-wrap">
+            <table id="result-table"></table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

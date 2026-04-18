@@ -38,3 +38,19 @@ def test_query_endpoint_returns_rows(tmp_path: Path) -> None:
     assert data["selected_table"] == "orders"
     assert data["row_count"] >= 1
     assert "verified_sql" in data
+
+
+def test_index_page_served() -> None:
+    fastapi = pytest.importorskip("fastapi")
+    _ = fastapi
+    from fastapi.testclient import TestClient
+
+    from multi_agent_sql_assistant.app import create_app
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Multi-Agent SQL Assistant" in response.text
+    assert "/static/styles.css" in response.text

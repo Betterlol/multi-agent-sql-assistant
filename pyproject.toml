@@ -16,5 +16,8 @@ dev = [
   "httpx>=0.27.0",
 ]
 
+[tool.setuptools.package-data]
+multi_agent_sql_assistant = ["web/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,142 @@
+const form = document.getElementById("query-form");
+const submitBtn = document.getElementById("submit-btn");
+
+const errorBox = document.getElementById("error-box");
+const resultPanel = document.getElementById("result-panel");
+
+const planIntent = document.getElementById("plan-intent");
+const selectedTable = document.getElementById("selected-table");
+const rowCount = document.getElementById("row-count");
+const latencyPill = document.getElementById("latency-pill");
+const generatedSQL = document.getElementById("generated-sql");
+const verifiedSQL = document.getElementById("verified-sql");
+const warningsList = document.getElementById("warnings");
+const resultTable = document.getElementById("result-table");
+
+const dbPathInput = document.getElementById("database-path");
+const questionInput = document.getElementById("question");
+const maxRowsInput = document.getElementById("max-rows");
+
+questionInput.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  hideError();
+
+  const payload = {
+    database_path: dbPathInput.value.trim(),
+    question: questionInput.value.trim(),
+    max_rows: Number(maxRowsInput.value),
+  };
+
+  if (!payload.database_path || !payload.question || !Number.isFinite(payload.max_rows)) {
+    showError("请填写完整参数（数据库路径、问题、最大返回行数）。");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "执行中...";
+  const start = performance.now();
+
+  try {
+    const response = await fetch("/v1/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await response.json();
+    if (!response.ok) {
+      const detail = typeof json.detail === "string" ? json.detail : "查询执行失败";
+      throw new Error(detail);
+    }
+
+    const elapsed = Math.round(performance.now() - start);
+    renderResult(json, elapsed);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "未知错误";
+    showError(`执行失败：${message}`);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "运行查询";
+  }
+});
+
+function showError(message) {
+  errorBox.textContent = message;
+  errorBox.classList.remove("hidden");
+}
+
+function hideError() {
+  errorBox.textContent = "";
+  errorBox.classList.add("hidden");
+}
+
+function renderResult(data, elapsedMs) {
+  resultPanel.classList.remove("hidden");
+  planIntent.textContent = data.plan_intent;
+  selectedTable.textContent = data.selected_table;
+  rowCount.textContent = String(data.row_count);
+  latencyPill.textContent = `${elapsedMs} ms`;
+
+  generatedSQL.textContent = data.generated_sql || "-";
+  verifiedSQL.textContent = data.verified_sql || "-";
+
+  renderWarnings(data.warnings || []);
+  renderTable(data.columns || [], data.rows || []);
+}
+
+function renderWarnings(warnings) {
+  warningsList.innerHTML = "";
+  if (!warnings.length) {
+    const li = document.createElement("li");
+    li.textContent = "无";
+    warningsList.appendChild(li);
+    return;
+  }
+
+  for (const warning of warnings) {
+    const li = document.createElement("li");
+    li.textContent = warning;
+    warningsList.appendChild(li);
+  }
+}
+
+function renderTable(columns, rows) {
+  resultTable.innerHTML = "";
+
+  if (!columns.length) {
+    const caption = document.createElement("caption");
+    caption.textContent = "没有可展示的结果列";
+    resultTable.appendChild(caption);
+    return;
+  }
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  columns.forEach((column) => {
+    const th = document.createElement("th");
+    th.textContent = String(column);
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    row.forEach((cell) => {
+      const td = document.createElement("td");
+      td.textContent = cell === null ? "NULL" : String(cell);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  resultTable.appendChild(thead);
+  resultTable.appendChild(tbody);
+}

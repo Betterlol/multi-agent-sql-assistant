@@ -41,6 +41,8 @@ pytest -q
 uvicorn src.main:app --reload
 ```
 
+启动后访问 `http://127.0.0.1:8000/` 可使用内置前端交互页面。
+
 ## API usage
 ### Health
 ```bash
@@ -65,6 +67,16 @@ Response fields include:
 - `verified_sql`
 - `warnings`
 - `columns`, `rows`, `row_count`
+
+## Frontend interaction
+Web UI (`/`) supports:
+- 输入 SQLite 数据库路径
+- 输入自然语言问题
+- 配置 `max_rows`
+- 展示 planner intent、生成 SQL、校验 SQL、warnings
+- 表格渲染查询结果
+
+默认请求接口：`POST /v1/query`
 
 ## Optional LLM mode (OpenAI)
 By default, SQL generation is heuristic. To enable LLM-backed generation with automatic fallback:

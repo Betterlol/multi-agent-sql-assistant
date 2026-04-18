@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .agents.generator import SQLGeneratorAgent
@@ -47,6 +51,12 @@ pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=_build_ll
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Multi-Agent SQL Assistant", version="0.1.0")
+    web_root = Path(__file__).resolve().parent / "web"
+    app.mount("/static", StaticFiles(directory=web_root), name="static")
+
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(web_root / "index.html")
 
     @app.get("/health")
     def health() -> dict[str, str]:
