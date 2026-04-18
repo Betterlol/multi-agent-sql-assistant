@@ -1,0 +1,9 @@
+[project]
+name = "multi-agent-sql-assistant"
+version = "0.1.0"
+description = "Natural language to SQL with Planner/Generator/Verifier agents, schema-linking, and execution safety checks."
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
