@@ -16,8 +16,8 @@
 - Enforce configurable LIMIT caps
 
 ## Upload storage
-- Uploaded SQLite files are stored in `runtime_uploads/files`.
-- Registry metadata is persisted in `runtime_uploads/registry.sqlite`.
+- Uploaded SQLite files are stored in `${SQL_ASSISTANT_UPLOAD_ROOT}/files`.
+- Registry metadata is persisted in `${SQL_ASSISTANT_UPLOAD_ROOT}/registry.sqlite`.
 - Expired files are removed via TTL cleanup.
 
 ## Observability

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +23,12 @@ def load_settings() -> AppSettings:
     openai_api_key = _normalize_nullable(os.getenv("OPENAI_API_KEY"))
     model = os.getenv("SQL_ASSISTANT_OPENAI_MODEL", "gpt-4o-mini").strip()
     base_url = os.getenv("SQL_ASSISTANT_OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
-    upload_root = Path(os.getenv("SQL_ASSISTANT_UPLOAD_ROOT", "runtime_uploads")).resolve()
+    upload_root = Path(
+        os.getenv(
+            "SQL_ASSISTANT_UPLOAD_ROOT",
+            str(Path(tempfile.gettempdir()) / "multi-agent-sql-assistant" / "runtime_uploads"),
+        )
+    ).resolve()
     upload_ttl_seconds = _parse_int(os.getenv("SQL_ASSISTANT_UPLOAD_TTL_SECONDS"), default=24 * 60 * 60)
     upload_max_bytes = _parse_int(os.getenv("SQL_ASSISTANT_UPLOAD_MAX_BYTES"), default=30 * 1024 * 1024)
     log_level = os.getenv("SQL_ASSISTANT_LOG_LEVEL", "INFO").strip().upper()

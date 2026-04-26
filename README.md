@@ -135,10 +135,11 @@ Web UI (`/`) supports:
 默认请求接口：`POST /v1/query`
 
 ## Upload lifecycle
-- Uploaded files are persisted under `runtime_uploads/files/`.
-- Upload metadata is persisted in `runtime_uploads/registry.sqlite`.
+- Uploaded files are persisted under `${SQL_ASSISTANT_UPLOAD_ROOT}/files/`.
+- Upload metadata is persisted in `${SQL_ASSISTANT_UPLOAD_ROOT}/registry.sqlite`.
 - Expired uploads are cleaned automatically based on TTL (`SQL_ASSISTANT_UPLOAD_TTL_SECONDS`).
 - Default TTL: 86400 seconds (24 hours).
+- Default upload root: system temp dir, e.g. `/tmp/multi-agent-sql-assistant/runtime_uploads` on Linux.
 
 ## Optional LLM mode (OpenAI)
 By default, SQL generation is heuristic. To enable LLM-backed generation with automatic fallback:
