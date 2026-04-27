@@ -3,78 +3,120 @@ from __future__ import annotations
 import re
 
 from ..database import DatabaseSchema
-from ..llm import LLMGenerationError, SQLLLMClient
-from ..types import GeneratedQuery, QueryPlan
+from ..llm import LLMGenerationError, SQLSpecLLMClient
+from ..types import GeneratedQuery, QueryPlan, QuerySort, QuerySpec
+from .spec_verifier import QuerySpecVerifier
+from .sql_builder import SQLBuilder
 
 
 class SQLGeneratorAgent:
-    def __init__(self, llm_client: SQLLLMClient | None = None) -> None:
+    def __init__(self, llm_client: SQLSpecLLMClient | None = None) -> None:
         self.llm_client = llm_client
 
-    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
+    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
         if not schema.tables:
             raise ValueError("Database has no queryable tables.")
 
-        if self.llm_client is not None:
+        generate_spec = getattr(self.llm_client, "generate_spec", None) if self.llm_client is not None else None
+        if callable(generate_spec):
             try:
-                llm_query = self.llm_client.generate(question=question, plan=plan, schema=schema)
-                normalized = self._normalize_llm_query(llm_query, schema=schema)
-                return GeneratedQuery(
-                    sql=normalized.sql,
-                    selected_table=normalized.selected_table,
-                    reasoning=f"llm generation -> {normalized.reasoning}",
+                llm_spec = generate_spec(question=question, plan=plan, schema=schema)
+                normalized = self._normalize_llm_spec(llm_spec, plan=plan, schema=schema)
+                reasoning = normalized.reasoning or "no reasoning"
+                return QuerySpec(
+                    target_table=normalized.target_table,
+                    select=normalized.select,
+                    filters=normalized.filters,
+                    search=normalized.search,
+                    sort=normalized.sort,
+                    limit=normalized.limit,
+                    offset=normalized.offset,
+                    mode=normalized.mode,
+                    reasoning=f"llm spec generation -> {reasoning}",
                 )
-            except (LLMGenerationError, ValueError):
+            except (LLMGenerationError, TypeError, ValueError):
                 # Silent fallback to deterministic heuristic generation.
                 pass
 
-        return self._heuristic_generate(question=question, plan=plan, schema=schema)
+        return self._heuristic_generate_spec(question=question, plan=plan, schema=schema)
 
-    def _heuristic_generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
+    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
+        spec = self.generate_spec(question=question, plan=plan, schema=schema)
+        verified_spec = QuerySpecVerifier().verify(spec=spec, schema=schema, max_limit=max(plan.limit, 1))
+        return SQLBuilder().build(verified_spec)
+
+    def _heuristic_generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
         table = self._select_table(question=question, plan=plan, schema=schema)
         columns = schema.tables[table]
 
-        if plan.intent == "count":
-            sql = f'SELECT COUNT(*) AS total_count FROM "{table}"'
-            reasoning = "count intent -> aggregate row count"
-        elif plan.intent == "top":
+        mode = "count" if plan.intent == "count" else "list"
+        sort: list[QuerySort] = []
+
+        if plan.intent == "top":
             sort_column = self._choose_sort_column(columns)
-            sql = (
-                f'SELECT * FROM "{table}" '
-                f'ORDER BY "{sort_column}" DESC '
-                f'LIMIT {plan.limit}'
-            )
-            reasoning = f"top intent -> sort by {sort_column}"
+            sort = [QuerySort(field=sort_column, direction="desc")]
+            reasoning = f"heuristic spec generation -> top intent sorted by {sort_column}"
+        elif plan.intent == "count":
+            reasoning = "heuristic spec generation -> count intent"
         else:
-            sql = f'SELECT * FROM "{table}" LIMIT {plan.limit}'
-            reasoning = "list intent -> preview records"
+            reasoning = "heuristic spec generation -> list intent"
 
-        return GeneratedQuery(sql=sql, selected_table=table, reasoning=reasoning)
-
-    def _normalize_llm_query(self, query: GeneratedQuery, schema: DatabaseSchema) -> GeneratedQuery:
-        if not query.sql.strip():
-            raise ValueError("LLM returned empty SQL.")
-        lowered = query.sql.lower().strip()
-        if not (lowered.startswith("select") or lowered.startswith("with")):
-            raise ValueError("LLM returned non-read SQL prefix.")
-
-        selected_table = query.selected_table
-        if selected_table not in schema.tables:
-            extracted = re.findall(
-                r'\b(?:from|join)\s+["`]?([a-zA-Z_][\w]*)',
-                query.sql,
-                flags=re.IGNORECASE,
-            )
-            matched = next((item for item in extracted if item in schema.tables), None)
-            if not matched:
-                raise ValueError("LLM selected table is not in schema.")
-            selected_table = matched
-
-        return GeneratedQuery(
-            sql=query.sql.strip().rstrip(";"),
-            selected_table=selected_table,
-            reasoning=query.reasoning,
+        return QuerySpec(
+            target_table=table,
+            select=["*"],
+            filters=[],
+            search=None,
+            sort=sort,
+            limit=plan.limit,
+            offset=0,
+            mode=mode,
+            reasoning=reasoning,
         )
+
+    def _normalize_llm_spec(self, spec: QuerySpec, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
+        if not isinstance(spec, QuerySpec):
+            raise ValueError("LLM must return QuerySpec.")
+
+        target_table = spec.target_table.strip()
+        if not target_table:
+            raise ValueError("LLM QuerySpec missing target_table.")
+
+        table_lookup = {name.lower(): name for name in schema.tables}
+        matched_table = table_lookup.get(target_table.lower())
+        if matched_table is None:
+            raise ValueError("LLM target_table not found in schema.")
+
+        normalized_select = spec.select or ["*"]
+        normalized_limit = self._coerce_int(spec.limit, default=plan.limit)
+        if normalized_limit < 1:
+            normalized_limit = plan.limit
+
+        normalized_offset = self._coerce_int(spec.offset, default=0)
+        if normalized_offset < 0:
+            normalized_offset = 0
+
+        default_mode = "count" if plan.intent == "count" else "list"
+        normalized_mode = (spec.mode or default_mode).strip().lower()
+
+        normalized_sort = [QuerySort(field=item.field, direction=(item.direction or "asc").lower()) for item in spec.sort]
+
+        return QuerySpec(
+            target_table=matched_table,
+            select=normalized_select,
+            filters=spec.filters,
+            search=spec.search,
+            sort=normalized_sort,
+            limit=normalized_limit,
+            offset=normalized_offset,
+            mode=normalized_mode,
+            reasoning=spec.reasoning,
+        )
+
+    def _coerce_int(self, value: object, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     def _select_table(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
         lowered = question.lower()

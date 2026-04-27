@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from pathlib import Path
 from time import perf_counter, time
 
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 from .agents.generator import SQLGeneratorAgent
 from .agents.verifier import SQLVerificationError
 from .database import SQLiteDatabaseClient
-from .llm import OpenAIChatCompletionsClient, SQLLLMClient
+from .llm import OpenAIChatCompletionsClient, SQLSpecLLMClient
 from .observability import MetricsStore, build_logger, log_event
 from .pipeline import SQLAssistantPipeline
 from .settings import AppSettings, load_settings
@@ -66,6 +67,8 @@ class QueryResponse(BaseModel):
     generated_sql: str
     verified_sql: str
     warnings: list[str]
+    query_spec: dict[str, object] | None = None
+    spec_warnings: list[str] = Field(default_factory=list)
     columns: list[str]
     rows: list[list[object]]
     row_count: int
@@ -92,7 +95,7 @@ class MetricsResponse(BaseModel):
     latency_ms: dict[str, float | int]
 
 
-def _build_env_llm_client(settings: AppSettings) -> SQLLLMClient | None:
+def _build_env_llm_client(settings: AppSettings) -> SQLSpecLLMClient | None:
     if settings.llm_provider != "openai":
         return None
     if not settings.openai_api_key:
@@ -105,7 +108,7 @@ def _build_env_llm_client(settings: AppSettings) -> SQLLLMClient | None:
     )
 
 
-def _build_request_llm_client(llm_config: LLMConfig | None, settings: AppSettings) -> SQLLLMClient | None:
+def _build_request_llm_client(llm_config: LLMConfig | None, settings: AppSettings) -> SQLSpecLLMClient | None:
     if llm_config is None or not llm_config.enabled:
         return None
 
@@ -309,17 +312,17 @@ def create_app() -> FastAPI:
                 max_rows=request.max_rows,
             )
 
-            llm_fallback = llm_enabled and not pipeline_result.generated_query.reasoning.startswith(
-                "llm generation"
-            )
+            llm_fallback = llm_enabled and not pipeline_result.query_spec.reasoning.startswith("llm spec generation")
             status = "ok"
             return QueryResponse(
                 request_id=request_id,
                 plan_intent=pipeline_result.plan.intent,
-                selected_table=pipeline_result.generated_query.selected_table,
+                selected_table=pipeline_result.query_spec.target_table,
                 generated_sql=pipeline_result.generated_query.sql,
                 verified_sql=pipeline_result.verified_query.sql,
                 warnings=pipeline_result.verified_query.warnings,
+                query_spec=asdict(pipeline_result.query_spec),
+                spec_warnings=pipeline_result.verified_query_spec.warnings,
                 columns=query_result.columns,
                 rows=query_result.rows,
                 row_count=query_result.row_count,

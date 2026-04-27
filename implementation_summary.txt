@@ -1,0 +1,769 @@
+1. 新增文件
+src/multi_agent_sql_assistant/agents/spec_verifier.py - 新增 QuerySpecVerifier，对 QuerySpec 做表/字段/op/排序/分页/mode 校验与规范化。
+src/multi_agent_sql_assistant/agents/sql_builder.py - 新增 SQLBuilder，把 VerifiedQuerySpec 稳定构造为 SQLite SQL，并做标识符/字面量安全转义。
+tests/test_queryspec_pipeline.py - 新增 QuerySpecVerifier、SQLBuilder、Pipeline 的阶段一核心测试。
+
+2. 改动文件
+src/multi_agent_sql_assistant/types.py - 新增 QuerySpec 相关 dataclass（QueryFilter/QuerySort/QuerySearch/QuerySpec/VerifiedQuerySpec），保留原有类型并扩展。
+src/multi_agent_sql_assistant/llm.py - 新增 QuerySpec 生成协议与 OpenAI generate_spec 流程，保留 legacy generate 兼容。
+src/multi_agent_sql_assistant/agents/generator.py - 主路径改为 generate_spec（LLM 优先，失败 fallback heuristic），并保留 generate 兼容。
+src/multi_agent_sql_assistant/pipeline.py - 流程升级为 Planner -> SpecGenerator -> SpecVerifier -> SQLBuilder -> SQLVerifier。
+src/multi_agent_sql_assistant/app.py - API 响应增加 query_spec/spec_warnings，接入新 pipeline 且保持旧字段兼容。
+src/multi_agent_sql_assistant/web/index.html - 结果区新增 Parsed QuerySpec 与 Spec Warnings 展示区域。
+src/multi_agent_sql_assistant/web/app.js - 新增 query_spec/spec_warnings 渲染逻辑，保持旧 SQL/结果展示不变。
+tests/test_generator_llm.py - 适配 generate_spec 行为并保留 generate 兼容测试。
+
+3. 改动内容 代码的 diff 格式
+diff --git a/src/multi_agent_sql_assistant/agents/generator.py b/src/multi_agent_sql_assistant/agents/generator.py
+index a2c1f54..b6ab004 100644
+--- a/src/multi_agent_sql_assistant/agents/generator.py
++++ b/src/multi_agent_sql_assistant/agents/generator.py
+@@ -3,79 +3,121 @@ from __future__ import annotations
+ import re
+ 
+ from ..database import DatabaseSchema
+-from ..llm import LLMGenerationError, SQLLLMClient
+-from ..types import GeneratedQuery, QueryPlan
++from ..llm import LLMGenerationError, SQLSpecLLMClient
++from ..types import GeneratedQuery, QueryPlan, QuerySort, QuerySpec
++from .spec_verifier import QuerySpecVerifier
++from .sql_builder import SQLBuilder
+ 
+ 
+ class SQLGeneratorAgent:
+-    def __init__(self, llm_client: SQLLLMClient | None = None) -> None:
++    def __init__(self, llm_client: SQLSpecLLMClient | None = None) -> None:
+         self.llm_client = llm_client
+ 
+-    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
+         if not schema.tables:
+             raise ValueError("Database has no queryable tables.")
+ 
+-        if self.llm_client is not None:
++        generate_spec = getattr(self.llm_client, "generate_spec", None) if self.llm_client is not None else None
++        if callable(generate_spec):
+             try:
+-                llm_query = self.llm_client.generate(question=question, plan=plan, schema=schema)
+-                normalized = self._normalize_llm_query(llm_query, schema=schema)
+-                return GeneratedQuery(
+-                    sql=normalized.sql,
+-                    selected_table=normalized.selected_table,
+-                    reasoning=f"llm generation -> {normalized.reasoning}",
++                llm_spec = generate_spec(question=question, plan=plan, schema=schema)
++                normalized = self._normalize_llm_spec(llm_spec, plan=plan, schema=schema)
++                reasoning = normalized.reasoning or "no reasoning"
++                return QuerySpec(
++                    target_table=normalized.target_table,
++                    select=normalized.select,
++                    filters=normalized.filters,
++                    search=normalized.search,
++                    sort=normalized.sort,
++                    limit=normalized.limit,
++                    offset=normalized.offset,
++                    mode=normalized.mode,
++                    reasoning=f"llm spec generation -> {reasoning}",
+                 )
+-            except (LLMGenerationError, ValueError):
++            except (LLMGenerationError, TypeError, ValueError):
+                 # Silent fallback to deterministic heuristic generation.
+                 pass
+ 
+-        return self._heuristic_generate(question=question, plan=plan, schema=schema)
++        return self._heuristic_generate_spec(question=question, plan=plan, schema=schema)
++
++    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++        spec = self.generate_spec(question=question, plan=plan, schema=schema)
++        verified_spec = QuerySpecVerifier().verify(spec=spec, schema=schema, max_limit=max(plan.limit, 1))
++        return SQLBuilder().build(verified_spec)
+ 
+-    def _heuristic_generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++    def _heuristic_generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
+         table = self._select_table(question=question, plan=plan, schema=schema)
+         columns = schema.tables[table]
+ 
+-        if plan.intent == "count":
+-            sql = f'SELECT COUNT(*) AS total_count FROM "{table}"'
+-            reasoning = "count intent -> aggregate row count"
+-        elif plan.intent == "top":
++        mode = "count" if plan.intent == "count" else "list"
++        sort: list[QuerySort] = []
++
++        if plan.intent == "top":
+             sort_column = self._choose_sort_column(columns)
+-            sql = (
+-                f'SELECT * FROM "{table}" '
+-                f'ORDER BY "{sort_column}" DESC '
+-                f'LIMIT {plan.limit}'
+-            )
+-            reasoning = f"top intent -> sort by {sort_column}"
++            sort = [QuerySort(field=sort_column, direction="desc")]
++            reasoning = f"heuristic spec generation -> top intent sorted by {sort_column}"
++        elif plan.intent == "count":
++            reasoning = "heuristic spec generation -> count intent"
+         else:
+-            sql = f'SELECT * FROM "{table}" LIMIT {plan.limit}'
+-            reasoning = "list intent -> preview records"
+-
+-        return GeneratedQuery(sql=sql, selected_table=table, reasoning=reasoning)
+-
+-    def _normalize_llm_query(self, query: GeneratedQuery, schema: DatabaseSchema) -> GeneratedQuery:
+-        if not query.sql.strip():
+-            raise ValueError("LLM returned empty SQL.")
+-        lowered = query.sql.lower().strip()
+-        if not (lowered.startswith("select") or lowered.startswith("with")):
+-            raise ValueError("LLM returned non-read SQL prefix.")
+-
+-        selected_table = query.selected_table
+-        if selected_table not in schema.tables:
+-            extracted = re.findall(
+-                r'\b(?:from|join)\s+["`]?([a-zA-Z_][\w]*)',
+-                query.sql,
+-                flags=re.IGNORECASE,
+-            )
+-            matched = next((item for item in extracted if item in schema.tables), None)
+-            if not matched:
+-                raise ValueError("LLM selected table is not in schema.")
+-            selected_table = matched
+-
+-        return GeneratedQuery(
+-            sql=query.sql.strip().rstrip(";"),
+-            selected_table=selected_table,
+-            reasoning=query.reasoning,
++            reasoning = "heuristic spec generation -> list intent"
++
++        return QuerySpec(
++            target_table=table,
++            select=["*"],
++            filters=[],
++            search=None,
++            sort=sort,
++            limit=plan.limit,
++            offset=0,
++            mode=mode,
++            reasoning=reasoning,
+         )
+ 
++    def _normalize_llm_spec(self, spec: QuerySpec, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
++        if not isinstance(spec, QuerySpec):
++            raise ValueError("LLM must return QuerySpec.")
++
++        target_table = spec.target_table.strip()
++        if not target_table:
++            raise ValueError("LLM QuerySpec missing target_table.")
++
++        table_lookup = {name.lower(): name for name in schema.tables}
++        matched_table = table_lookup.get(target_table.lower())
++        if matched_table is None:
++            raise ValueError("LLM target_table not found in schema.")
++
++        normalized_select = spec.select or ["*"]
++        normalized_limit = self._coerce_int(spec.limit, default=plan.limit)
++        if normalized_limit < 1:
++            normalized_limit = plan.limit
++
++        normalized_offset = self._coerce_int(spec.offset, default=0)
++        if normalized_offset < 0:
++            normalized_offset = 0
++
++        default_mode = "count" if plan.intent == "count" else "list"
++        normalized_mode = (spec.mode or default_mode).strip().lower()
++
++        normalized_sort = [QuerySort(field=item.field, direction=(item.direction or "asc").lower()) for item in spec.sort]
++
++        return QuerySpec(
++            target_table=matched_table,
++            select=normalized_select,
++            filters=spec.filters,
++            search=spec.search,
++            sort=normalized_sort,
++            limit=normalized_limit,
++            offset=normalized_offset,
++            mode=normalized_mode,
++            reasoning=spec.reasoning,
++        )
++
++    def _coerce_int(self, value: object, default: int) -> int:
++        try:
++            return int(value)
++        except (TypeError, ValueError):
++            return default
++
+     def _select_table(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
+         lowered = question.lower()
+         if plan.table_hint:
+diff --git a/src/multi_agent_sql_assistant/app.py b/src/multi_agent_sql_assistant/app.py
+index 26906ae..c588a95 100644
+--- a/src/multi_agent_sql_assistant/app.py
++++ b/src/multi_agent_sql_assistant/app.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import logging
++from dataclasses import asdict
+ from pathlib import Path
+ from time import perf_counter, time
+ 
+@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field, model_validator
+ from .agents.generator import SQLGeneratorAgent
+ from .agents.verifier import SQLVerificationError
+ from .database import SQLiteDatabaseClient
+-from .llm import OpenAIChatCompletionsClient, SQLLLMClient
++from .llm import OpenAIChatCompletionsClient, SQLSpecLLMClient
+ from .observability import MetricsStore, build_logger, log_event
+ from .pipeline import SQLAssistantPipeline
+ from .settings import AppSettings, load_settings
+@@ -66,6 +67,8 @@ class QueryResponse(BaseModel):
+     generated_sql: str
+     verified_sql: str
+     warnings: list[str]
++    query_spec: dict[str, object] | None = None
++    spec_warnings: list[str] = Field(default_factory=list)
+     columns: list[str]
+     rows: list[list[object]]
+     row_count: int
+@@ -92,7 +95,7 @@ class MetricsResponse(BaseModel):
+     latency_ms: dict[str, float | int]
+ 
+ 
+-def _build_env_llm_client(settings: AppSettings) -> SQLLLMClient | None:
++def _build_env_llm_client(settings: AppSettings) -> SQLSpecLLMClient | None:
+     if settings.llm_provider != "openai":
+         return None
+     if not settings.openai_api_key:
+@@ -105,7 +108,7 @@ def _build_env_llm_client(settings: AppSettings) -> SQLLLMClient | None:
+     )
+ 
+ 
+-def _build_request_llm_client(llm_config: LLMConfig | None, settings: AppSettings) -> SQLLLMClient | None:
++def _build_request_llm_client(llm_config: LLMConfig | None, settings: AppSettings) -> SQLSpecLLMClient | None:
+     if llm_config is None or not llm_config.enabled:
+         return None
+ 
+@@ -309,17 +312,17 @@ def create_app() -> FastAPI:
+                 max_rows=request.max_rows,
+             )
+ 
+-            llm_fallback = llm_enabled and not pipeline_result.generated_query.reasoning.startswith(
+-                "llm generation"
+-            )
++            llm_fallback = llm_enabled and not pipeline_result.query_spec.reasoning.startswith("llm spec generation")
+             status = "ok"
+             return QueryResponse(
+                 request_id=request_id,
+                 plan_intent=pipeline_result.plan.intent,
+-                selected_table=pipeline_result.generated_query.selected_table,
++                selected_table=pipeline_result.query_spec.target_table,
+                 generated_sql=pipeline_result.generated_query.sql,
+                 verified_sql=pipeline_result.verified_query.sql,
+                 warnings=pipeline_result.verified_query.warnings,
++                query_spec=asdict(pipeline_result.query_spec),
++                spec_warnings=pipeline_result.verified_query_spec.warnings,
+                 columns=query_result.columns,
+                 rows=query_result.rows,
+                 row_count=query_result.row_count,
+diff --git a/src/multi_agent_sql_assistant/llm.py b/src/multi_agent_sql_assistant/llm.py
+index 4295916..82a277d 100644
+--- a/src/multi_agent_sql_assistant/llm.py
++++ b/src/multi_agent_sql_assistant/llm.py
+@@ -2,10 +2,10 @@ from __future__ import annotations
+ 
+ import json
+ from dataclasses import dataclass
+-from typing import Protocol
++from typing import Any, Protocol
+ 
+ from .database import DatabaseSchema
+-from .types import GeneratedQuery, QueryPlan
++from .types import GeneratedQuery, QueryFilter, QueryPlan, QuerySearch, QuerySort, QuerySpec
+ 
+ 
+ class LLMGenerationError(RuntimeError):
+@@ -14,7 +14,12 @@ class LLMGenerationError(RuntimeError):
+ 
+ class SQLLLMClient(Protocol):
+     def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
+-        """Generate SQL from natural language prompt context."""
++        """Legacy protocol for direct SQL generation."""
++
++
++class SQLSpecLLMClient(Protocol):
++    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
++        """Generate query spec from natural language prompt context."""
+ 
+ 
+ @dataclass(frozen=True)
+@@ -24,7 +29,7 @@ class OpenAIChatCompletionsClient:
+     base_url: str = "https://api.openai.com/v1"
+     timeout_seconds: float = 30.0
+ 
+-    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
+         try:
+             import httpx
+         except ModuleNotFoundError as exc:  # pragma: no cover - env dependent
+@@ -33,11 +38,12 @@ class OpenAIChatCompletionsClient:
+             ) from exc
+ 
+         system_prompt = (
+-            "You are a SQL generation assistant for SQLite. "
+-            "Generate a single read-only SQL query. "
+-            "Always return strict JSON with keys: sql, selected_table, reasoning."
++            "You are a query-planning assistant for SQLite. "
++            "Return structured query specification JSON only. "
++            "Do not output SQL. "
++            "Use exactly one table."
+         )
+-        user_prompt = self._build_user_prompt(question=question, plan=plan, schema=schema)
++        user_prompt = self._build_spec_user_prompt(question=question, plan=plan, schema=schema)
+         payload = {
+             "model": self.model,
+             "messages": [
+@@ -57,20 +63,39 @@ class OpenAIChatCompletionsClient:
+             body = response.json()
+             message = body["choices"][0]["message"]["content"]
+             parsed = self._parse_json_payload(message)
+-            return GeneratedQuery(
+-                sql=parsed["sql"],
+-                selected_table=parsed["selected_table"],
+-                reasoning=parsed["reasoning"],
+-            )
++            return self._coerce_query_spec(parsed, plan=plan, schema=schema)
+         except Exception as exc:  # pragma: no cover - network dependent
+-            raise LLMGenerationError(f"OpenAI generation failed: {exc}") from exc
++            raise LLMGenerationError(f"OpenAI spec generation failed: {exc}") from exc
++
++    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++        spec = self.generate_spec(question=question, plan=plan, schema=schema)
++        sql = self._spec_to_legacy_sql(spec)
++        reasoning = spec.reasoning or "no reasoning"
++        return GeneratedQuery(
++            sql=sql,
++            selected_table=spec.target_table,
++            reasoning=f"llm spec generation -> {reasoning}",
++        )
+ 
+-    def _build_user_prompt(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
++    def _build_spec_user_prompt(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
+         schema_lines = []
+         for table, columns in schema.tables.items():
+             schema_lines.append(f'- {table}: {", ".join(columns)}')
+         schema_text = "\n".join(schema_lines)
+         notes = "; ".join(plan.notes) if plan.notes else "none"
++        default_mode = "count" if plan.intent == "count" else "list"
++
++        example = {
++            "target_table": "orders",
++            "select": ["*"],
++            "filters": [{"field": "amount", "op": ">=", "value": 100}],
++            "search": {"query": "vip", "fields": ["customer_name", "note"]},
++            "sort": [{"field": "updated_at", "direction": "desc"}],
++            "limit": plan.limit,
++            "offset": 0,
++            "mode": default_mode,
++            "reasoning": "selected by intent and field relevance",
++        }
+ 
+         return (
+             f"Question: {question}\n"
+@@ -80,29 +105,125 @@ class OpenAIChatCompletionsClient:
+             f"Planning notes: {notes}\n\n"
+             f"Database schema:\n{schema_text}\n\n"
+             "Rules:\n"
+-            "1) Use only tables and columns from schema.\n"
+-            "2) Output read-only SQL only (SELECT/WITH).\n"
+-            "3) Prefer deterministic ordering for top/list queries.\n"
+-            "4) Include LIMIT when returning rows.\n"
+-            "5) Return strict JSON with keys sql, selected_table, reasoning."
++            "1) Return strict JSON only.\n"
++            "2) Do not return SQL.\n"
++            "3) Use exactly one table from schema.\n"
++            "4) Use existing fields only; if unsure pick most likely and explain in reasoning.\n"
++            "5) mode must be list or count.\n"
++            "6) Supported ops: =, !=, >, >=, <, <=, contains, not_contains, in, between, is_null, is_not_null.\n"
++            f"7) JSON example: {json.dumps(example, ensure_ascii=False)}"
+         )
+ 
+-    def _parse_json_payload(self, content: str) -> dict[str, str]:
++    def _parse_json_payload(self, content: str) -> dict[str, Any]:
+         try:
+             data = json.loads(content)
+         except json.JSONDecodeError as exc:
+             raise LLMGenerationError("LLM response was not valid JSON.") from exc
+ 
+-        required = ("sql", "selected_table", "reasoning")
+-        missing = [key for key in required if key not in data]
+-        if missing:
+-            raise LLMGenerationError(f"LLM response missing keys: {', '.join(missing)}")
++        if not isinstance(data, dict):
++            raise LLMGenerationError("LLM response root must be a JSON object.")
++        return data
++
++    def _coerce_query_spec(self, data: dict[str, Any], plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
++        if not schema.tables:
++            raise LLMGenerationError("Schema has no queryable tables.")
++
++        target_table = str(data.get("target_table") or plan.table_hint or next(iter(schema.tables))).strip()
++        select = self._as_string_list(data.get("select")) or ["*"]
++
++        filters: list[QueryFilter] = []
++        raw_filters = data.get("filters")
++        if isinstance(raw_filters, list):
++            for item in raw_filters:
++                if not isinstance(item, dict):
++                    continue
++                filters.append(
++                    QueryFilter(
++                        field=str(item.get("field") or "").strip(),
++                        op=str(item.get("op") or "").strip().lower(),
++                        value=item.get("value"),
++                        value2=item.get("value2"),
++                    )
++                )
++
++        search = None
++        raw_search = data.get("search")
++        if isinstance(raw_search, dict):
++            search = QuerySearch(
++                query=str(raw_search.get("query") or "").strip(),
++                fields=self._as_string_list(raw_search.get("fields")),
++            )
++
++        sort: list[QuerySort] = []
++        raw_sort = data.get("sort")
++        if isinstance(raw_sort, list):
++            for item in raw_sort:
++                if not isinstance(item, dict):
++                    continue
++                sort.append(
++                    QuerySort(
++                        field=str(item.get("field") or "").strip(),
++                        direction=str(item.get("direction") or "asc").strip().lower(),
++                    )
++                )
++
++        limit = self._coerce_int(data.get("limit"), default=plan.limit)
++        offset = self._coerce_int(data.get("offset"), default=0)
++        mode_default = "count" if plan.intent == "count" else "list"
++        mode = str(data.get("mode") or mode_default).strip().lower()
++        reasoning = str(data.get("reasoning") or "").strip()
++
++        return QuerySpec(
++            target_table=target_table,
++            select=select,
++            filters=filters,
++            search=search,
++            sort=sort,
++            limit=limit,
++            offset=offset,
++            mode=mode,
++            reasoning=reasoning,
++        )
+ 
+-        if not all(isinstance(data[key], str) and data[key].strip() for key in required):
+-            raise LLMGenerationError("LLM response keys must be non-empty strings.")
++    def _spec_to_legacy_sql(self, spec: QuerySpec) -> str:
++        table = self._quote_ident(spec.target_table)
++        if spec.mode == "count":
++            return f"SELECT COUNT(*) AS total_count FROM {table}"
++
++        if spec.select == ["*"]:
++            select_clause = "*"
++        else:
++            select_clause = ", ".join(self._quote_ident(col) for col in spec.select)
++
++        sql = f"SELECT {select_clause} FROM {table}"
++        if spec.sort:
++            order_fragments = [
++                f"{self._quote_ident(item.field)} {item.direction.upper()}"
++                for item in spec.sort
++            ]
++            sql += " ORDER BY " + ", ".join(order_fragments)
++        sql += f" LIMIT {max(spec.limit, 1)}"
++        if spec.offset > 0:
++            sql += f" OFFSET {spec.offset}"
++        return sql
++
++    def _as_string_list(self, value: Any) -> list[str]:
++        if not isinstance(value, list):
++            return []
++        items: list[str] = []
++        for entry in value:
++            if isinstance(entry, str) and entry.strip():
++                items.append(entry.strip())
++        return items
++
++    def _coerce_int(self, value: Any, default: int) -> int:
++        if value is None:
++            return default
++        try:
++            return int(value)
++        except (TypeError, ValueError):
++            return default
+ 
+-        return {
+-            "sql": data["sql"].strip(),
+-            "selected_table": data["selected_table"].strip(),
+-            "reasoning": data["reasoning"].strip(),
+-        }
++    def _quote_ident(self, name: str) -> str:
++        escaped = name.replace('"', '""')
++        return f'"{escaped}"'
+diff --git a/src/multi_agent_sql_assistant/pipeline.py b/src/multi_agent_sql_assistant/pipeline.py
+index c336d95..6a5320b 100644
+--- a/src/multi_agent_sql_assistant/pipeline.py
++++ b/src/multi_agent_sql_assistant/pipeline.py
+@@ -4,14 +4,18 @@ from dataclasses import dataclass
+ 
+ from .agents.generator import SQLGeneratorAgent
+ from .agents.planner import PlannerAgent
++from .agents.spec_verifier import QuerySpecVerifier
++from .agents.sql_builder import SQLBuilder
+ from .agents.verifier import VerifierAgent
+ from .database import DatabaseSchema
+-from .types import GeneratedQuery, QueryPlan, VerifiedQuery
++from .types import GeneratedQuery, QueryPlan, QuerySpec, VerifiedQuery, VerifiedQuerySpec
+ 
+ 
+ @dataclass(frozen=True)
+ class PipelineResult:
+     plan: QueryPlan
++    query_spec: QuerySpec
++    verified_query_spec: VerifiedQuerySpec
+     generated_query: GeneratedQuery
+     verified_query: VerifiedQuery
+ 
+@@ -21,14 +25,26 @@ class SQLAssistantPipeline:
+         self,
+         planner: PlannerAgent | None = None,
+         generator: SQLGeneratorAgent | None = None,
++        spec_verifier: QuerySpecVerifier | None = None,
++        sql_builder: SQLBuilder | None = None,
+         verifier: VerifierAgent | None = None,
+     ) -> None:
+         self.planner = planner or PlannerAgent()
+         self.generator = generator or SQLGeneratorAgent()
++        self.spec_verifier = spec_verifier or QuerySpecVerifier()
++        self.sql_builder = sql_builder or SQLBuilder()
+         self.verifier = verifier or VerifierAgent()
+ 
+     def run(self, question: str, schema: DatabaseSchema, max_rows: int = 100) -> PipelineResult:
+         plan = self.planner.plan(question)
+-        generated = self.generator.generate(question=question, plan=plan, schema=schema)
++        query_spec = self.generator.generate_spec(question=question, plan=plan, schema=schema)
++        verified_spec = self.spec_verifier.verify(spec=query_spec, schema=schema, max_limit=max_rows)
++        generated = self.sql_builder.build(verified_spec)
+         verified = self.verifier.verify(generated.sql, schema=schema, max_limit=max_rows)
+-        return PipelineResult(plan=plan, generated_query=generated, verified_query=verified)
++        return PipelineResult(
++            plan=plan,
++            query_spec=query_spec,
++            verified_query_spec=verified_spec,
++            generated_query=generated,
++            verified_query=verified,
++        )
+diff --git a/src/multi_agent_sql_assistant/types.py b/src/multi_agent_sql_assistant/types.py
+index 0da6e06..801039f 100644
+--- a/src/multi_agent_sql_assistant/types.py
++++ b/src/multi_agent_sql_assistant/types.py
+@@ -12,6 +12,45 @@ class QueryPlan:
+     notes: list[str] = field(default_factory=list)
+ 
+ 
++@dataclass(frozen=True)
++class QueryFilter:
++    field: str
++    op: str
++    value: Any | None = None
++    value2: Any | None = None
++
++
++@dataclass(frozen=True)
++class QuerySort:
++    field: str
++    direction: str = "asc"
++
++
++@dataclass(frozen=True)
++class QuerySearch:
++    query: str
++    fields: list[str]
++
++
++@dataclass(frozen=True)
++class QuerySpec:
++    target_table: str
++    select: list[str] = field(default_factory=lambda: ["*"])
++    filters: list[QueryFilter] = field(default_factory=list)
++    search: QuerySearch | None = None
++    sort: list[QuerySort] = field(default_factory=list)
++    limit: int = 20
++    offset: int = 0
++    mode: str = "list"
++    reasoning: str = ""
++
++
++@dataclass(frozen=True)
++class VerifiedQuerySpec:
++    spec: QuerySpec
++    warnings: list[str] = field(default_factory=list)
++
++
+ @dataclass(frozen=True)
+ class GeneratedQuery:
+     sql: str
+diff --git a/src/multi_agent_sql_assistant/web/app.js b/src/multi_agent_sql_assistant/web/app.js
+index 629f14b..cb272e7 100644
+--- a/src/multi_agent_sql_assistant/web/app.js
++++ b/src/multi_agent_sql_assistant/web/app.js
+@@ -10,7 +10,9 @@ const rowCount = document.getElementById("row-count");
+ const latencyPill = document.getElementById("latency-pill");
+ const generatedSQL = document.getElementById("generated-sql");
+ const verifiedSQL = document.getElementById("verified-sql");
++const querySpec = document.getElementById("query-spec");
+ const warningsList = document.getElementById("warnings");
++const specWarningsList = document.getElementById("spec-warnings");
+ const resultTable = document.getElementById("result-table");
+ 
+ const dbFileInput = document.getElementById("database-file");
+@@ -170,26 +172,37 @@ function renderResult(data, elapsedMs) {
+   generatedSQL.textContent = data.generated_sql || "-";
+   verifiedSQL.textContent = data.verified_sql || "-";
+ 
+-  renderWarnings(data.warnings || []);
++  renderWarnings(warningsList, data.warnings || []);
++  renderWarnings(specWarningsList, data.spec_warnings || []);
++  renderQuerySpec(data.query_spec || null);
+   renderTable(data.columns || [], data.rows || []);
+ }
+ 
+-function renderWarnings(warnings) {
+-  warningsList.innerHTML = "";
++function renderWarnings(container, warnings) {
++  container.innerHTML = "";
+   if (!warnings.length) {
+     const li = document.createElement("li");
+     li.textContent = "无";
+-    warningsList.appendChild(li);
++    container.appendChild(li);
+     return;
+   }
+ 
+   for (const warning of warnings) {
+     const li = document.createElement("li");
+     li.textContent = warning;
+-    warningsList.appendChild(li);
++    container.appendChild(li);
+   }
+ }
+ 
++function renderQuerySpec(spec) {
++  if (!spec) {
++    querySpec.textContent = "-";
++    return;
++  }
++
++  querySpec.textContent = JSON.stringify(spec, null, 2);
++}
++
+ function renderTable(columns, rows) {
+   resultTable.innerHTML = "";
+ 
+diff --git a/src/multi_agent_sql_assistant/web/index.html b/src/multi_agent_sql_assistant/web/index.html
+index ef0f9b9..ef8c5d0 100644
+--- a/src/multi_agent_sql_assistant/web/index.html
++++ b/src/multi_agent_sql_assistant/web/index.html
+@@ -139,6 +139,16 @@
+           </article>
+         </div>
+ 
++        <article>
++          <h3>Parsed QuerySpec</h3>
++          <pre id="query-spec"></pre>
++        </article>
++
++        <article>
++          <h3>Spec Warnings</h3>
++          <ul id="spec-warnings" class="warning-list"></ul>
++        </article>
++
+         <article>
+           <h3>Warnings</h3>
+           <ul id="warnings" class="warning-list"></ul>
+diff --git a/tests/test_generator_llm.py b/tests/test_generator_llm.py
+index 986e10c..f9facf2 100644
+--- a/tests/test_generator_llm.py
++++ b/tests/test_generator_llm.py
+@@ -3,42 +3,55 @@ from __future__ import annotations
+ from multi_agent_sql_assistant.agents.generator import SQLGeneratorAgent
+ from multi_agent_sql_assistant.database import DatabaseSchema
+ from multi_agent_sql_assistant.llm import LLMGenerationError
+-from multi_agent_sql_assistant.types import GeneratedQuery, QueryPlan
++from multi_agent_sql_assistant.types import QueryPlan, QuerySpec
+ 
+ 
+-class FakeLLMSuccess:
+-    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
+-        return GeneratedQuery(
+-            sql='SELECT COUNT(*) AS total_count FROM "orders"',
+-            selected_table="orders",
++class FakeSpecLLMSuccess:
++    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
++        return QuerySpec(
++            target_table="orders",
++            select=["*"],
++            limit=plan.limit,
++            mode="count",
+             reasoning="generated by fake llm",
+         )
+ 
+ 
+-class FakeLLMFailure:
+-    def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
++class FakeSpecLLMFailure:
++    def generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
+         raise LLMGenerationError("synthetic failure")
+ 
+ 
+-def test_generator_uses_llm_when_available() -> None:
++def test_generator_uses_llm_spec_when_available() -> None:
+     schema = DatabaseSchema(tables={"orders": ["id", "amount"]})
+     plan = QueryPlan(intent="count", table_hint=None, limit=20, notes=[])
+-    generator = SQLGeneratorAgent(llm_client=FakeLLMSuccess())
++    generator = SQLGeneratorAgent(llm_client=FakeSpecLLMSuccess())
+ 
+-    query = generator.generate("How many orders?", plan=plan, schema=schema)
++    spec = generator.generate_spec("How many orders?", plan=plan, schema=schema)
+ 
+-    assert query.selected_table == "orders"
+-    assert "COUNT" in query.sql.upper()
+-    assert query.reasoning.startswith("llm generation")
++    assert spec.target_table == "orders"
++    assert spec.mode == "count"
++    assert spec.reasoning.startswith("llm spec generation")
++
++
++def test_generator_falls_back_to_heuristic_spec_when_llm_fails() -> None:
++    schema = DatabaseSchema(tables={"orders": ["id", "amount"]})
++    plan = QueryPlan(intent="count", table_hint=None, limit=20, notes=[])
++    generator = SQLGeneratorAgent(llm_client=FakeSpecLLMFailure())
++
++    spec = generator.generate_spec("How many orders?", plan=plan, schema=schema)
++
++    assert spec.target_table == "orders"
++    assert spec.mode == "count"
++    assert spec.reasoning.startswith("heuristic spec generation")
+ 
+ 
+-def test_generator_falls_back_when_llm_fails() -> None:
++def test_generator_generate_keeps_legacy_sql_compatibility() -> None:
+     schema = DatabaseSchema(tables={"orders": ["id", "amount"]})
+     plan = QueryPlan(intent="count", table_hint=None, limit=20, notes=[])
+-    generator = SQLGeneratorAgent(llm_client=FakeLLMFailure())
++    generator = SQLGeneratorAgent(llm_client=FakeSpecLLMSuccess())
+ 
+     query = generator.generate("How many orders?", plan=plan, schema=schema)
+ 
+     assert query.selected_table == "orders"
+     assert "COUNT" in query.sql.upper()
+-    assert "intent" in query.reasoning

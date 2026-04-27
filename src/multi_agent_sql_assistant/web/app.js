@@ -10,7 +10,9 @@ const rowCount = document.getElementById("row-count");
 const latencyPill = document.getElementById("latency-pill");
 const generatedSQL = document.getElementById("generated-sql");
 const verifiedSQL = document.getElementById("verified-sql");
+const querySpec = document.getElementById("query-spec");
 const warningsList = document.getElementById("warnings");
+const specWarningsList = document.getElementById("spec-warnings");
 const resultTable = document.getElementById("result-table");
 
 const dbFileInput = document.getElementById("database-file");
@@ -170,24 +172,35 @@ function renderResult(data, elapsedMs) {
   generatedSQL.textContent = data.generated_sql || "-";
   verifiedSQL.textContent = data.verified_sql || "-";
 
-  renderWarnings(data.warnings || []);
+  renderWarnings(warningsList, data.warnings || []);
+  renderWarnings(specWarningsList, data.spec_warnings || []);
+  renderQuerySpec(data.query_spec || null);
   renderTable(data.columns || [], data.rows || []);
 }
 
-function renderWarnings(warnings) {
-  warningsList.innerHTML = "";
+function renderWarnings(container, warnings) {
+  container.innerHTML = "";
   if (!warnings.length) {
     const li = document.createElement("li");
     li.textContent = "无";
-    warningsList.appendChild(li);
+    container.appendChild(li);
     return;
   }
 
   for (const warning of warnings) {
     const li = document.createElement("li");
     li.textContent = warning;
-    warningsList.appendChild(li);
+    container.appendChild(li);
   }
+}
+
+function renderQuerySpec(spec) {
+  if (!spec) {
+    querySpec.textContent = "-";
+    return;
+  }
+
+  querySpec.textContent = JSON.stringify(spec, null, 2);
 }
 
 function renderTable(columns, rows) {
