@@ -6,6 +6,7 @@ from pathlib import Path
 from time import perf_counter, time
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
@@ -66,6 +67,8 @@ class QueryResponse(BaseModel):
     selected_table: str
     generated_sql: str
     verified_sql: str
+    built_sql: str | None = None
+    sql_params: list[object] | None = None
     warnings: list[str]
     query_spec: dict[str, object] | None = None
     spec_warnings: list[str] = Field(default_factory=list)
@@ -161,6 +164,14 @@ def create_app() -> FastAPI:
     default_pipeline = SQLAssistantPipeline(generator=SQLGeneratorAgent(llm_client=env_llm_client))
 
     app = FastAPI(title="Multi-Agent SQL Assistant", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     web_root = Path(__file__).resolve().parent / "web"
     app.mount("/static", StaticFiles(directory=web_root), name="static")
 
@@ -173,11 +184,13 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get("/metrics", response_model=MetricsResponse)
+    @app.get("/v1/metrics", response_model=MetricsResponse)
     def get_metrics() -> MetricsResponse:
         snapshot = metrics.snapshot(uploads_active=upload_registry.active_count())
         return MetricsResponse(**snapshot)
 
     @app.post("/v1/upload-db", response_model=UploadDatabaseResponse)
+    @app.post("/v1/database/upload", response_model=UploadDatabaseResponse)
     async def upload_db(file: UploadFile = File(...)) -> UploadDatabaseResponse:
         request_id = _new_request_id()
         started = perf_counter()
@@ -309,6 +322,7 @@ def create_app() -> FastAPI:
             )
             query_result = db_client.execute_query(
                 pipeline_result.verified_query.sql,
+                params=pipeline_result.built_query.params,
                 max_rows=request.max_rows,
             )
 
@@ -320,6 +334,8 @@ def create_app() -> FastAPI:
                 selected_table=pipeline_result.query_spec.target_table,
                 generated_sql=pipeline_result.generated_query.sql,
                 verified_sql=pipeline_result.verified_query.sql,
+                built_sql=pipeline_result.built_query.sql,
+                sql_params=list(pipeline_result.built_query.params),
                 warnings=pipeline_result.verified_query.warnings,
                 query_spec=asdict(pipeline_result.query_spec),
                 spec_warnings=pipeline_result.verified_query_spec.warnings,

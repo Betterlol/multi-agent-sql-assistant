@@ -9,7 +9,9 @@ const selectedTable = document.getElementById("selected-table");
 const rowCount = document.getElementById("row-count");
 const latencyPill = document.getElementById("latency-pill");
 const generatedSQL = document.getElementById("generated-sql");
+const builtSQL = document.getElementById("built-sql");
 const verifiedSQL = document.getElementById("verified-sql");
+const sqlParams = document.getElementById("sql-params");
 const querySpec = document.getElementById("query-spec");
 const warningsList = document.getElementById("warnings");
 const specWarningsList = document.getElementById("spec-warnings");
@@ -170,7 +172,9 @@ function renderResult(data, elapsedMs) {
   latencyPill.textContent = `${elapsedMs} ms`;
 
   generatedSQL.textContent = data.generated_sql || "-";
+  builtSQL.textContent = data.built_sql || data.generated_sql || "-";
   verifiedSQL.textContent = data.verified_sql || "-";
+  sqlParams.textContent = JSON.stringify(data.sql_params || [], null, 2);
 
   renderWarnings(warningsList, data.warnings || []);
   renderWarnings(specWarningsList, data.spec_warnings || []);

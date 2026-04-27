@@ -35,7 +35,6 @@ class SQLGeneratorAgent:
                     reasoning=f"llm spec generation -> {reasoning}",
                 )
             except (LLMGenerationError, TypeError, ValueError):
-                # Silent fallback to deterministic heuristic generation.
                 pass
 
         return self._heuristic_generate_spec(question=question, plan=plan, schema=schema)
@@ -43,7 +42,8 @@ class SQLGeneratorAgent:
     def generate(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> GeneratedQuery:
         spec = self.generate_spec(question=question, plan=plan, schema=schema)
         verified_spec = QuerySpecVerifier().verify(spec=spec, schema=schema, max_limit=max(plan.limit, 1))
-        return SQLBuilder().build(verified_spec)
+        built = SQLBuilder().build(verified_spec)
+        return GeneratedQuery(sql=built.sql, selected_table=built.selected_table, reasoning=built.reasoning)
 
     def _heuristic_generate_spec(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> QuerySpec:
         table = self._select_table(question=question, plan=plan, schema=schema)
@@ -52,11 +52,18 @@ class SQLGeneratorAgent:
         mode = "count" if plan.intent == "count" else "list"
         sort: list[QuerySort] = []
 
-        if plan.intent == "top":
-            sort_column = self._choose_sort_column(columns)
+        sort_preference = self._extract_sort_preference(plan.notes)
+        if mode == "list" and (plan.intent == "top" or sort_preference is not None):
+            if sort_preference == "updated_at" and any(col.lower() == "updated_at" for col in columns):
+                sort_column = next(col for col in columns if col.lower() == "updated_at")
+            elif sort_preference == "numeric":
+                sort_column = self._choose_sort_column(columns, prefer_numeric=True)
+            else:
+                sort_column = self._choose_sort_column(columns)
+
             sort = [QuerySort(field=sort_column, direction="desc")]
-            reasoning = f"heuristic spec generation -> top intent sorted by {sort_column}"
-        elif plan.intent == "count":
+            reasoning = f"heuristic spec generation -> sorted by {sort_column} desc"
+        elif mode == "count":
             reasoning = "heuristic spec generation -> count intent"
         else:
             reasoning = "heuristic spec generation -> list intent"
@@ -112,6 +119,15 @@ class SQLGeneratorAgent:
             reasoning=spec.reasoning,
         )
 
+    def _extract_sort_preference(self, notes: list[str]) -> str | None:
+        for note in notes:
+            lowered = note.lower()
+            if "updated_at desc" in lowered:
+                return "updated_at"
+            if "numeric desc" in lowered:
+                return "numeric"
+        return None
+
     def _coerce_int(self, value: object, default: int) -> int:
         try:
             return int(value)
@@ -149,11 +165,24 @@ class SQLGeneratorAgent:
         assert best_table is not None
         return best_table
 
-    def _choose_sort_column(self, columns: list[str]) -> str:
-        preferred_patterns = ("amount", "price", "total", "score", "count", "qty", "quantity")
+    def _choose_sort_column(self, columns: list[str], prefer_numeric: bool = False) -> str:
+        numeric_patterns = ("amount", "price", "total", "score", "count", "qty", "quantity", "rating")
+        datetime_patterns = ("updated_at", "created_at")
+
+        if prefer_numeric:
+            for column in columns:
+                lower = column.lower()
+                if any(keyword in lower for keyword in numeric_patterns):
+                    return column
+
         for column in columns:
             lower = column.lower()
-            if any(keyword in lower for keyword in preferred_patterns):
+            if any(keyword in lower for keyword in datetime_patterns):
+                return column
+
+        for column in columns:
+            lower = column.lower()
+            if any(keyword in lower for keyword in numeric_patterns):
                 return column
 
         for column in columns:

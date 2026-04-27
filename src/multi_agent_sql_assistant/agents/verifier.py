@@ -89,12 +89,17 @@ class VerifierAgent:
         if existing_limit is not None and existing_limit <= max_limit:
             return bounded.sql(dialect="sqlite"), None
 
-        bounded = bounded.limit(max_limit, copy=False)
-        if existing_limit is None:
-            warning = f"LIMIT added: {max_limit}."
-        else:
+        if existing_limit is not None and existing_limit > max_limit:
+            bounded = bounded.limit(max_limit, copy=False)
             warning = f"LIMIT reduced from {existing_limit} to {max_limit}."
+            return bounded.sql(dialect="sqlite"), warning
 
+        if limit_node is not None:
+            # Parameterized or dynamic LIMIT expression: keep unchanged.
+            return bounded.sql(dialect="sqlite"), None
+
+        bounded = bounded.limit(max_limit, copy=False)
+        warning = f"LIMIT added: {max_limit}."
         return bounded.sql(dialect="sqlite"), warning
 
     def _extract_limit_value(self, limit_expr: Any) -> int | None:

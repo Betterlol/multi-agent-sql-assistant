@@ -45,9 +45,17 @@ class SQLiteDatabaseClient:
 
         return DatabaseSchema(tables=tables)
 
-    def execute_query(self, sql: str, max_rows: int = 100) -> QueryResult:
+    def execute_query(
+        self,
+        sql: str,
+        params: list[Any] | tuple[Any, ...] | None = None,
+        max_rows: int = 100,
+    ) -> QueryResult:
         with self._connect() as conn:
-            cursor = conn.execute(sql)
+            if params is None:
+                cursor = conn.execute(sql)
+            else:
+                cursor = conn.execute(sql, tuple(params))
             rows = cursor.fetchmany(max_rows)
             columns = [str(desc[0]) for desc in cursor.description or []]
             serialized_rows: list[list[Any]] = []

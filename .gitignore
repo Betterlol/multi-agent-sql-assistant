@@ -24,6 +24,10 @@ Thumbs.db
 build/
 dist/
 *.log
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.tsbuildinfo
 
 # Local demo data
 sample_data/*.sqlite

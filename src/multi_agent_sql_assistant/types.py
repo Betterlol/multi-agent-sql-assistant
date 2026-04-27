@@ -52,6 +52,14 @@ class VerifiedQuerySpec:
 
 
 @dataclass(frozen=True)
+class BuiltQuery:
+    sql: str
+    params: list[Any]
+    selected_table: str
+    reasoning: str
+
+
+@dataclass(frozen=True)
 class GeneratedQuery:
     sql: str
     selected_table: str

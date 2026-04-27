@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .database import DatabaseSchema
+from .schema_semantics import SchemaSemantics, build_default_semantics
 from .types import GeneratedQuery, QueryFilter, QueryPlan, QuerySearch, QuerySort, QuerySpec
 
 
@@ -37,13 +38,14 @@ class OpenAIChatCompletionsClient:
                 "httpx is required for OpenAI integration. Install project dependencies."
             ) from exc
 
+        semantics = build_default_semantics(schema)
         system_prompt = (
             "You are a query-planning assistant for SQLite. "
             "Return structured query specification JSON only. "
             "Do not output SQL. "
             "Use exactly one table."
         )
-        user_prompt = self._build_spec_user_prompt(question=question, plan=plan, schema=schema)
+        user_prompt = self._build_spec_user_prompt(question=question, plan=plan, schema=schema, semantics=semantics)
         payload = {
             "model": self.model,
             "messages": [
@@ -77,11 +79,31 @@ class OpenAIChatCompletionsClient:
             reasoning=f"llm spec generation -> {reasoning}",
         )
 
-    def _build_spec_user_prompt(self, question: str, plan: QueryPlan, schema: DatabaseSchema) -> str:
+    def _build_spec_user_prompt(
+        self,
+        question: str,
+        plan: QueryPlan,
+        schema: DatabaseSchema,
+        semantics: SchemaSemantics,
+    ) -> str:
         schema_lines = []
         for table, columns in schema.tables.items():
             schema_lines.append(f'- {table}: {", ".join(columns)}')
         schema_text = "\n".join(schema_lines)
+
+        semantic_lines: list[str] = []
+        for table_semantic in semantics.tables.values():
+            field_parts: list[str] = []
+            for field in table_semantic.fields.values():
+                tags: list[str] = [f"type={field.field_type}"]
+                if field.searchable:
+                    tags.append("searchable")
+                if field.sortable:
+                    tags.append("sortable")
+                field_parts.append(f"{field.name} ({', '.join(tags)})")
+            semantic_lines.append(f"- {table_semantic.name}: " + "; ".join(field_parts))
+        semantic_text = "\n".join(semantic_lines)
+
         notes = "; ".join(plan.notes) if plan.notes else "none"
         default_mode = "count" if plan.intent == "count" else "list"
 
@@ -89,7 +111,7 @@ class OpenAIChatCompletionsClient:
             "target_table": "orders",
             "select": ["*"],
             "filters": [{"field": "amount", "op": ">=", "value": 100}],
-            "search": {"query": "vip", "fields": ["customer_name", "note"]},
+            "search": {"query": "vip", "fields": ["note"]},
             "sort": [{"field": "updated_at", "direction": "desc"}],
             "limit": plan.limit,
             "offset": 0,
@@ -104,14 +126,19 @@ class OpenAIChatCompletionsClient:
             f"Limit: {plan.limit}\n"
             f"Planning notes: {notes}\n\n"
             f"Database schema:\n{schema_text}\n\n"
+            f"Schema semantics:\n{semantic_text}\n\n"
             "Rules:\n"
             "1) Return strict JSON only.\n"
             "2) Do not return SQL.\n"
             "3) Use exactly one table from schema.\n"
-            "4) Use existing fields only; if unsure pick most likely and explain in reasoning.\n"
-            "5) mode must be list or count.\n"
-            "6) Supported ops: =, !=, >, >=, <, <=, contains, not_contains, in, between, is_null, is_not_null.\n"
-            f"7) JSON example: {json.dumps(example, ensure_ascii=False)}"
+            "4) search.fields should prioritize searchable fields.\n"
+            "5) sort should prioritize sortable fields.\n"
+            "6) contains/not_contains should target text-like fields.\n"
+            "7) >, >=, <, <= should target number/datetime fields when possible.\n"
+            "8) If uncertain, pick best field and explain uncertainty in reasoning.\n"
+            "9) mode must be list or count.\n"
+            "10) Supported ops: =, !=, >, >=, <, <=, contains, not_contains, in, between, is_null, is_not_null.\n"
+            f"11) JSON example: {json.dumps(example, ensure_ascii=False)}"
         )
 
     def _parse_json_payload(self, content: str) -> dict[str, Any]:
@@ -137,10 +164,14 @@ class OpenAIChatCompletionsClient:
             for item in raw_filters:
                 if not isinstance(item, dict):
                     continue
+                field = str(item.get("field") or "").strip()
+                op = str(item.get("op") or "").strip().lower()
+                if not field or not op:
+                    continue
                 filters.append(
                     QueryFilter(
-                        field=str(item.get("field") or "").strip(),
-                        op=str(item.get("op") or "").strip().lower(),
+                        field=field,
+                        op=op,
                         value=item.get("value"),
                         value2=item.get("value2"),
                     )
@@ -149,10 +180,10 @@ class OpenAIChatCompletionsClient:
         search = None
         raw_search = data.get("search")
         if isinstance(raw_search, dict):
-            search = QuerySearch(
-                query=str(raw_search.get("query") or "").strip(),
-                fields=self._as_string_list(raw_search.get("fields")),
-            )
+            query = str(raw_search.get("query") or "").strip()
+            fields = self._as_string_list(raw_search.get("fields"))
+            if query:
+                search = QuerySearch(query=query, fields=fields)
 
         sort: list[QuerySort] = []
         raw_sort = data.get("sort")
@@ -160,12 +191,11 @@ class OpenAIChatCompletionsClient:
             for item in raw_sort:
                 if not isinstance(item, dict):
                     continue
-                sort.append(
-                    QuerySort(
-                        field=str(item.get("field") or "").strip(),
-                        direction=str(item.get("direction") or "asc").strip().lower(),
-                    )
-                )
+                field = str(item.get("field") or "").strip()
+                if not field:
+                    continue
+                direction = str(item.get("direction") or "asc").strip().lower()
+                sort.append(QuerySort(field=field, direction=direction))
 
         limit = self._coerce_int(data.get("limit"), default=plan.limit)
         offset = self._coerce_int(data.get("offset"), default=0)
@@ -197,10 +227,7 @@ class OpenAIChatCompletionsClient:
 
         sql = f"SELECT {select_clause} FROM {table}"
         if spec.sort:
-            order_fragments = [
-                f"{self._quote_ident(item.field)} {item.direction.upper()}"
-                for item in spec.sort
-            ]
+            order_fragments = [f"{self._quote_ident(item.field)} {item.direction.upper()}" for item in spec.sort]
             sql += " ORDER BY " + ", ".join(order_fragments)
         sql += f" LIMIT {max(spec.limit, 1)}"
         if spec.offset > 0:

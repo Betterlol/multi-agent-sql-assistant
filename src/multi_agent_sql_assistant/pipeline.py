@@ -8,7 +8,7 @@ from .agents.spec_verifier import QuerySpecVerifier
 from .agents.sql_builder import SQLBuilder
 from .agents.verifier import VerifierAgent
 from .database import DatabaseSchema
-from .types import GeneratedQuery, QueryPlan, QuerySpec, VerifiedQuery, VerifiedQuerySpec
+from .types import BuiltQuery, GeneratedQuery, QueryPlan, QuerySpec, VerifiedQuery, VerifiedQuerySpec
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class PipelineResult:
     plan: QueryPlan
     query_spec: QuerySpec
     verified_query_spec: VerifiedQuerySpec
+    built_query: BuiltQuery
     generated_query: GeneratedQuery
     verified_query: VerifiedQuery
 
@@ -39,12 +40,18 @@ class SQLAssistantPipeline:
         plan = self.planner.plan(question)
         query_spec = self.generator.generate_spec(question=question, plan=plan, schema=schema)
         verified_spec = self.spec_verifier.verify(spec=query_spec, schema=schema, max_limit=max_rows)
-        generated = self.sql_builder.build(verified_spec)
-        verified = self.verifier.verify(generated.sql, schema=schema, max_limit=max_rows)
+        built_query = self.sql_builder.build(verified_spec)
+        verified = self.verifier.verify(built_query.sql, schema=schema, max_limit=max_rows)
+        generated_compat = GeneratedQuery(
+            sql=built_query.sql,
+            selected_table=built_query.selected_table,
+            reasoning=built_query.reasoning,
+        )
         return PipelineResult(
             plan=plan,
             query_spec=query_spec,
             verified_query_spec=verified_spec,
-            generated_query=generated,
+            built_query=built_query,
+            generated_query=generated_compat,
             verified_query=verified,
         )

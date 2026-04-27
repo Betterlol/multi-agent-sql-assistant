@@ -80,6 +80,38 @@ def test_upload_then_query_by_database_id(tmp_path: Path) -> None:
     assert data["row_count"] >= 1
 
 
+def test_upload_alias_endpoint_then_query(tmp_path: Path) -> None:
+    fastapi = pytest.importorskip("fastapi")
+    _ = fastapi
+    from fastapi.testclient import TestClient
+
+    from multi_agent_sql_assistant.app import create_app
+
+    db_path = tmp_path / "upload_alias.sqlite"
+    _prepare_db(db_path)
+    db_bytes = db_path.read_bytes()
+
+    app = create_app()
+    client = TestClient(app)
+
+    upload_response = client.post(
+        "/v1/database/upload",
+        files={"file": ("upload_alias.sqlite", BytesIO(db_bytes), "application/octet-stream")},
+    )
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()
+
+    query_payload = {
+        "database_id": uploaded["database_id"],
+        "question": "How many orders are there?",
+        "max_rows": 20,
+    }
+    query_response = client.post("/v1/query", json=query_payload)
+    assert query_response.status_code == 200
+    data = query_response.json()
+    assert data["selected_table"] == "orders"
+
+
 def test_query_requires_database_source() -> None:
     fastapi = pytest.importorskip("fastapi")
     _ = fastapi
@@ -183,3 +215,20 @@ def test_metrics_endpoint_tracks_query_and_upload(tmp_path: Path) -> None:
     after_metrics = after.json()
     assert after_metrics["uploads_total"] >= before_metrics["uploads_total"] + 1
     assert after_metrics["queries_total"] >= before_metrics["queries_total"] + 1
+
+
+def test_metrics_alias_endpoint_available() -> None:
+    fastapi = pytest.importorskip("fastapi")
+    _ = fastapi
+    from fastapi.testclient import TestClient
+
+    from multi_agent_sql_assistant.app import create_app
+
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/v1/metrics")
+    assert response.status_code == 200
+    data = response.json()
+    assert "queries_total" in data
+    assert "uploads_total" in data

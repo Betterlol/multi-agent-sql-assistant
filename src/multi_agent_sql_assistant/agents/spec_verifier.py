@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ..database import DatabaseSchema
+from ..schema_semantics import SchemaSemantics, build_default_semantics
 from ..types import QueryFilter, QuerySearch, QuerySort, QuerySpec, VerifiedQuerySpec
 
 
@@ -27,18 +28,26 @@ class QuerySpecVerifier:
     ALLOWED_MODES = {"list", "count"}
     ALLOWED_DIRECTIONS = {"asc", "desc"}
 
-    def verify(self, spec: QuerySpec, schema: DatabaseSchema, max_limit: int = 100) -> VerifiedQuerySpec:
+    def verify(
+        self,
+        spec: QuerySpec,
+        schema: DatabaseSchema,
+        max_limit: int = 100,
+        semantics: SchemaSemantics | None = None,
+    ) -> VerifiedQuerySpec:
         if not schema.tables:
             raise QuerySpecVerificationError("Database has no queryable tables.")
 
+        semantic_model = semantics or build_default_semantics(schema)
         warnings: list[str] = []
         table_name = self._resolve_table(spec.target_table, schema)
         table_columns = schema.tables[table_name]
+        table_semantic = semantic_model.tables.get(table_name.lower())
 
         normalized_select = self._normalize_select(spec.select, table_columns, warnings)
         normalized_filters = self._normalize_filters(spec.filters, table_columns)
-        normalized_search = self._normalize_search(spec.search, table_columns, warnings)
-        normalized_sort = self._normalize_sort(spec.sort, table_columns)
+        normalized_search = self._normalize_search(spec.search, table_columns, table_semantic, warnings)
+        normalized_sort = self._normalize_sort(spec.sort, table_columns, table_semantic, warnings)
         normalized_limit = self._normalize_limit(spec.limit, max_limit=max_limit, warnings=warnings)
         normalized_offset = self._normalize_offset(spec.offset)
         normalized_mode = self._normalize_mode(spec.mode)
@@ -107,26 +116,53 @@ class QuerySpecVerifier:
         self,
         search: QuerySearch | None,
         columns: list[str],
+        table_semantic,
         warnings: list[str],
     ) -> QuerySearch | None:
         if search is None:
             return None
 
-        fields = search.fields
+        query = search.query.strip()
+        if not query:
+            return None
+
+        fields = list(search.fields)
         if not fields:
-            warnings.append("search.fields was empty, defaulted to all table columns")
-            fields = list(columns)
+            semantic_fields: list[str] = []
+            if table_semantic is not None:
+                for semantic in table_semantic.fields.values():
+                    if semantic.searchable:
+                        semantic_fields.append(semantic.name)
+
+            if semantic_fields:
+                fields = semantic_fields
+                warnings.append("search.fields was empty, defaulted to searchable fields")
+            else:
+                fields = list(columns)
+                warnings.append("search.fields was empty and no searchable fields were found, defaulted to all fields")
 
         normalized_fields = [self._resolve_field(field, columns) for field in fields]
-        return QuerySearch(query=search.query, fields=normalized_fields)
+        return QuerySearch(query=query, fields=normalized_fields)
 
-    def _normalize_sort(self, sort: list[QuerySort], columns: list[str]) -> list[QuerySort]:
+    def _normalize_sort(
+        self,
+        sort: list[QuerySort],
+        columns: list[str],
+        table_semantic,
+        warnings: list[str],
+    ) -> list[QuerySort]:
         normalized: list[QuerySort] = []
         for item in sort:
             direction = item.direction.strip().lower() if item.direction else "asc"
             if direction not in self.ALLOWED_DIRECTIONS:
                 raise QuerySpecVerificationError(f"Unsupported sort direction: {item.direction}")
+
             field = self._resolve_field(item.field, columns)
+            if table_semantic is not None:
+                field_semantic = table_semantic.fields.get(field.lower())
+                if field_semantic is not None and not field_semantic.sortable:
+                    warnings.append(f"sorting by non-sortable semantic field: {field}")
+
             normalized.append(QuerySort(field=field, direction=direction))
         return normalized
 
