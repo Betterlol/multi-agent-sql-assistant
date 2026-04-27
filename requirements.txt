@@ -9,7 +9,6 @@ httpcore==1.0.9
 httpx==0.28.1
 idna==3.11
 iniconfig==2.3.0
--e git+https://github.com/Betterlol/multi-agent-sql-assistant.git@4d7d380499b57c5bb6d846e4843c570e88c57c7c#egg=multi_agent_sql_assistant
 packaging==26.1
 pluggy==1.6.0
 pydantic==2.13.2

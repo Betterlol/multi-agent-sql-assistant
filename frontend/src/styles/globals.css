@@ -16,10 +16,58 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Manrope", "Segoe UI", "Helvetica Neue", sans-serif;
-  background: radial-gradient(circle at top right, #f0f4ff 0%, #f8fafc 45%, #fafafa 100%);
+  background: radial-gradient(circle at 12% 18%, #ffe9c8 0%, transparent 40%),
+    radial-gradient(circle at 82% 15%, #d9fff3 0%, transparent 35%),
+    linear-gradient(155deg, #fffaf2 0%, #fff7eb 45%, #f6fcff 100%);
   color: #18181b;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  position: relative;
+  overflow-x: hidden;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  z-index: 0;
+  border-radius: 999px;
+  filter: blur(18px);
+  opacity: 0.6;
+  animation: float 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+body::before {
+  width: 260px;
+  height: 260px;
+  top: -90px;
+  right: -70px;
+  background: #fcd34d;
+}
+
+body::after {
+  width: 320px;
+  height: 320px;
+  bottom: -140px;
+  left: -120px;
+  background: #5eead4;
+  animation-delay: 1.2s;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-16px);
+  }
 }
 
 code,

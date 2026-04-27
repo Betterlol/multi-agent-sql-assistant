@@ -1,5 +1,7 @@
 import type { MetricsResponse, QueryResponse, UploadResponse } from "./types";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim().replace(/\/$/, "") ?? "";
+
 class ApiError extends Error {
   status: number;
 
@@ -24,7 +26,7 @@ export async function uploadDatabase(file: File): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch("/v1/database/upload", {
+  const response = await fetch(`${API_BASE_URL}/v1/database/upload`, {
     method: "POST",
     body: formData,
   });
@@ -50,7 +52,7 @@ export interface RunQueryInput {
 }
 
 export async function runQuery(input: RunQueryInput): Promise<QueryResponse> {
-  const response = await fetch("/v1/query", {
+  const response = await fetch(`${API_BASE_URL}/v1/query`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -66,7 +68,7 @@ export async function runQuery(input: RunQueryInput): Promise<QueryResponse> {
 }
 
 export async function fetchMetrics(): Promise<MetricsResponse> {
-  const response = await fetch("/v1/metrics", { method: "GET" });
+  const response = await fetch(`${API_BASE_URL}/v1/metrics`, { method: "GET" });
   if (!response.ok) {
     throw await parseError(response);
   }
