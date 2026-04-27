@@ -1,4 +1,6 @@
-import { Card } from "../ui/Card";
+import { Activity, Database, Rows2, Timer } from "lucide-react";
+
+import { Badge } from "../ui/Badge";
 
 interface ResultStatsProps {
   rowCount: number;
@@ -8,21 +10,24 @@ interface ResultStatsProps {
 }
 
 export function ResultStats({ rowCount, selectedTable, intent, latencyMs }: ResultStatsProps) {
-  const stats = [
-    { label: "Row Count", value: String(rowCount) },
-    { label: "Selected Table", value: selectedTable || "-" },
-    { label: "Intent", value: intent || "-" },
-    { label: "Latency", value: latencyMs === null ? "-" : `${latencyMs} ms` },
-  ];
-
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {stats.map((item) => (
-        <Card key={item.label} className="p-3">
-          <div className="text-xs text-slate-400">{item.label}</div>
-          <div className="mt-1 font-mono text-sm text-slate-100">{item.value}</div>
-        </Card>
-      ))}
+    <div className="flex flex-wrap items-center gap-2">
+      <Badge className="inline-flex items-center gap-1.5">
+        <Rows2 className="h-3 w-3" />
+        Rows: {rowCount}
+      </Badge>
+      <Badge className="inline-flex items-center gap-1.5">
+        <Database className="h-3 w-3" />
+        Table: {selectedTable || "-"}
+      </Badge>
+      <Badge tone="accent" className="inline-flex items-center gap-1.5">
+        <Activity className="h-3 w-3" />
+        Mode: {intent || "-"}
+      </Badge>
+      <Badge className="inline-flex items-center gap-1.5">
+        <Timer className="h-3 w-3" />
+        Latency: {latencyMs === null ? "-" : `${latencyMs} ms`}
+      </Badge>
     </div>
   );
 }

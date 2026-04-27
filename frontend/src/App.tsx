@@ -1,15 +1,6 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, FlaskConical } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ApiError, fetchMetrics, runQuery, uploadDatabase } from "./lib/api";
-import type {
-  HistoryItem,
-  MetricsResponse,
-  QueryResponse,
-  TableSchema,
-  UploadResponse,
-} from "./lib/types";
-import { loadHistory, saveHistory } from "./lib/utils";
 import { BuiltSQLPanel } from "./components/debug/BuiltSQLPanel";
 import { ParamsPanel } from "./components/debug/ParamsPanel";
 import { QuerySpecPanel } from "./components/debug/QuerySpecPanel";
@@ -22,9 +13,17 @@ import { QueryComposer } from "./components/query/QueryComposer";
 import { QueryHistory } from "./components/query/QueryHistory";
 import { ResultStats } from "./components/result/ResultStats";
 import { ResultTable } from "./components/result/ResultTable";
-import { UploadPanel } from "./components/upload/UploadPanel";
 import { Card } from "./components/ui/Card";
 import { Tabs, type TabItem } from "./components/ui/Tabs";
+import { ApiError, fetchMetrics, runQuery, uploadDatabase } from "./lib/api";
+import type {
+  HistoryItem,
+  MetricsResponse,
+  QueryResponse,
+  TableSchema,
+  UploadResponse,
+} from "./lib/types";
+import { loadHistory, saveHistory } from "./lib/utils";
 
 export default function App() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
@@ -38,7 +37,21 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [maxRows, setMaxRows] = useState(100);
   const [llmEnabled, setLlmEnabled] = useState(false);
+  const [apiKey, setApiKey] = useState(() => {
+    try {
+      return localStorage.getItem("sql-assistant-openai-api-key") ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [model, setModel] = useState("");
+  const [baseUrl, setBaseUrl] = useState(() => {
+    try {
+      return localStorage.getItem("sql-assistant-openai-base-url") ?? "";
+    } catch {
+      return "";
+    }
+  });
 
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
@@ -50,6 +63,22 @@ export default function App() {
   useEffect(() => {
     saveHistory(history);
   }, [history]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("sql-assistant-openai-api-key", apiKey);
+    } catch {
+      // no-op
+    }
+  }, [apiKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("sql-assistant-openai-base-url", baseUrl);
+    } catch {
+      // no-op
+    }
+  }, [baseUrl]);
 
   const refreshMetrics = useCallback(async () => {
     try {
@@ -88,6 +117,7 @@ export default function App() {
       setUploadInfo(info);
       setTableSchema(info.table_schema ?? Object.fromEntries((info.table_names || []).map((name) => [name, []])));
       setBackendOk(true);
+      setFile(null);
       await refreshMetrics();
     } catch (err) {
       const message = err instanceof ApiError ? err.message : "上传失败";
@@ -119,7 +149,9 @@ export default function App() {
         llm: {
           enabled: llmEnabled,
           provider: "openai",
+          api_key: apiKey.trim() || null,
           model: model.trim() || null,
+          base_url: baseUrl.trim() || null,
         },
       });
       setResult(response);
@@ -135,7 +167,7 @@ export default function App() {
     } finally {
       setRunning(false);
     }
-  }, [addHistory, llmEnabled, maxRows, model, question, refreshMetrics, uploadInfo?.database_id]);
+  }, [addHistory, apiKey, baseUrl, llmEnabled, maxRows, model, question, refreshMetrics, uploadInfo?.database_id]);
 
   const handleHistorySelect = useCallback((item: HistoryItem) => {
     setQuestion(item.question);
@@ -150,17 +182,17 @@ export default function App() {
       },
       {
         key: "built",
-        label: "Built SQL",
+        label: "SQL",
         content: <BuiltSQLPanel sql={result?.built_sql ?? result?.generated_sql ?? null} />,
       },
       {
         key: "params",
-        label: "SQL Params",
+        label: "Params",
         content: <ParamsPanel params={result?.sql_params ?? []} />,
       },
       {
         key: "verified",
-        label: "Verified SQL",
+        label: "Verified",
         content: <VerifiedSQLPanel sql={result?.verified_sql ?? null} />,
       },
       {
@@ -174,61 +206,71 @@ export default function App() {
 
   return (
     <AppLayout
-      sidebar={<Sidebar tableSchema={tableSchema} tableCount={uploadInfo?.table_count ?? 0} />}
-      topbar={<TopBar metrics={metrics} backendOk={backendOk} />}
+      header={
+        <TopBar
+          metrics={metrics}
+          backendOk={backendOk}
+          file={file}
+          uploading={uploading}
+          uploadInfo={uploadInfo}
+          onFileChange={setFile}
+          onUpload={handleUpload}
+        />
+      }
+      sidebar={
+        <>
+          <Sidebar tableSchema={tableSchema} tableCount={uploadInfo?.table_count ?? 0} uploadInfo={uploadInfo} />
+          <QueryHistory items={history} onSelect={handleHistorySelect} />
+        </>
+      }
+      inspector={
+        <Card className="flex h-full min-h-[460px] flex-col p-5 xl:min-h-0">
+          <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-zinc-900">
+            <FlaskConical className="h-4 w-4 text-zinc-500" />
+            SQL Inspector
+          </div>
+          <div className="min-h-0 flex-1">
+            <Tabs items={debugTabs} defaultKey="spec" />
+          </div>
+        </Card>
+      }
     >
-      <div className="space-y-4">
+      <div className="space-y-6">
         {error && (
-          <Card className="border-rose-900 bg-rose-950/40 text-rose-200">
-            <div className="inline-flex items-center gap-2 text-sm">
+          <Card className="border-rose-200 bg-rose-50 p-4 text-rose-700">
+            <div className="inline-flex items-center gap-2 text-sm font-medium">
               <AlertTriangle className="h-4 w-4" />
               {error}
             </div>
           </Card>
         )}
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <div className="space-y-4">
-            <UploadPanel
-              file={file}
-              uploading={uploading}
-              uploadInfo={uploadInfo}
-              onFileChange={setFile}
-              onUpload={handleUpload}
-            />
-            <QueryHistory items={history} onSelect={handleHistorySelect} />
-          </div>
+        <QueryComposer
+          question={question}
+          maxRows={maxRows}
+          llmEnabled={llmEnabled}
+          apiKey={apiKey}
+          model={model}
+          baseUrl={baseUrl}
+          running={running}
+          canRun={Boolean(uploadInfo?.database_id)}
+          onQuestionChange={setQuestion}
+          onMaxRowsChange={setMaxRows}
+          onLLMEnabledChange={setLlmEnabled}
+          onApiKeyChange={setApiKey}
+          onModelChange={setModel}
+          onBaseUrlChange={setBaseUrl}
+          onRun={handleRun}
+        />
 
-          <div className="space-y-4">
-            <QueryComposer
-              question={question}
-              maxRows={maxRows}
-              llmEnabled={llmEnabled}
-              model={model}
-              running={running}
-              canRun={Boolean(uploadInfo?.database_id)}
-              onQuestionChange={setQuestion}
-              onMaxRowsChange={setMaxRows}
-              onLLMEnabledChange={setLlmEnabled}
-              onModelChange={setModel}
-              onRun={handleRun}
-            />
+        <ResultStats
+          rowCount={result?.row_count ?? 0}
+          selectedTable={result?.selected_table ?? "-"}
+          intent={result?.plan_intent ?? "-"}
+          latencyMs={latencyMs}
+        />
 
-            <ResultStats
-              rowCount={result?.row_count ?? 0}
-              selectedTable={result?.selected_table ?? "-"}
-              intent={result?.plan_intent ?? "-"}
-              latencyMs={latencyMs}
-            />
-
-            <ResultTable columns={result?.columns ?? []} rows={result?.rows ?? []} />
-
-            <Card>
-              <div className="mb-3 text-sm font-semibold text-slate-200">Debug Panels</div>
-              <Tabs items={debugTabs} defaultKey="spec" />
-            </Card>
-          </div>
-        </div>
+        <ResultTable columns={result?.columns ?? []} rows={result?.rows ?? []} />
       </div>
     </AppLayout>
   );

@@ -1,4 +1,4 @@
-import { Card } from "../ui/Card";
+import { InspectorCodePanel } from "./InspectorCodePanel";
 
 interface ParamsPanelProps {
   params?: unknown[] | null;
@@ -6,10 +6,11 @@ interface ParamsPanelProps {
 
 export function ParamsPanel({ params }: ParamsPanelProps) {
   return (
-    <Card>
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-200">
-        {JSON.stringify(params ?? [], null, 2)}
-      </pre>
-    </Card>
+    <InspectorCodePanel
+      title="SQL Params"
+      language="json"
+      content={JSON.stringify(params ?? [])}
+      emptyText="No SQL params yet."
+    />
   );
 }

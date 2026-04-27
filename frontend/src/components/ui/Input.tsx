@@ -2,12 +2,13 @@ import type { InputHTMLAttributes } from "react";
 
 import { cn } from "../../lib/utils";
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return (
     <input
       className={cn(
-        "h-9 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100",
-        "placeholder:text-slate-500 focus:border-cyan-500 focus:outline-none"
+        "h-11 w-full rounded-xl border border-zinc-200 bg-white px-3.5 text-sm text-zinc-900 shadow-sm",
+        "placeholder:text-zinc-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100",
+        className
       )}
       {...props}
     />

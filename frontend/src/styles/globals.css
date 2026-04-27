@@ -1,18 +1,36 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Manrope", "Segoe UI", "Helvetica Neue", sans-serif;
+  background: radial-gradient(circle at top right, #f0f4ff 0%, #f8fafc 45%, #fafafa 100%);
+  color: #18181b;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+code,
+pre,
+.font-mono {
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #334155 #0f172a;
+  scrollbar-color: #d4d4d8 #f4f4f5;
 }
 
 ::-webkit-scrollbar {
@@ -21,10 +39,14 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0f172a;
+  background: #f4f4f5;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #d4d4d8;
   border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
 }

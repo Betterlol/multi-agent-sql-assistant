@@ -1,4 +1,4 @@
-import { Card } from "../ui/Card";
+import { InspectorCodePanel } from "./InspectorCodePanel";
 
 interface QuerySpecPanelProps {
   value: unknown;
@@ -6,10 +6,11 @@ interface QuerySpecPanelProps {
 
 export function QuerySpecPanel({ value }: QuerySpecPanelProps) {
   return (
-    <Card>
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-200">
-        {value ? JSON.stringify(value, null, 2) : "-"}
-      </pre>
-    </Card>
+    <InspectorCodePanel
+      title="QuerySpec JSON"
+      language="json"
+      content={value ? JSON.stringify(value) : ""}
+      emptyText="QuerySpec is not available yet."
+    />
   );
 }

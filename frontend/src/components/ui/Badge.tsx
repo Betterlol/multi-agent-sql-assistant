@@ -1,20 +1,22 @@
 import type { HTMLAttributes } from "react";
 
 import { cn } from "../../lib/utils";
+import { theme } from "../../styles/theme";
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  tone?: "default" | "success" | "warning" | "danger";
+  tone?: "default" | "success" | "warning" | "danger" | "accent";
 }
 
 export function Badge({ className, tone = "default", ...props }: BadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium",
-        tone === "default" && "bg-slate-800 text-slate-200",
-        tone === "success" && "bg-emerald-900/40 text-emerald-300",
-        tone === "warning" && "bg-amber-900/40 text-amber-300",
-        tone === "danger" && "bg-rose-900/40 text-rose-300",
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none",
+        tone === "default" && "border-zinc-200 bg-zinc-100 text-zinc-700",
+        tone === "success" && theme.colors.success,
+        tone === "warning" && theme.colors.warning,
+        tone === "danger" && theme.colors.danger,
+        tone === "accent" && theme.colors.accent,
         className
       )}
       {...props}

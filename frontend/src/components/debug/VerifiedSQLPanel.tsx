@@ -1,4 +1,4 @@
-import { Card } from "../ui/Card";
+import { InspectorCodePanel } from "./InspectorCodePanel";
 
 interface VerifiedSQLPanelProps {
   sql?: string | null;
@@ -6,8 +6,11 @@ interface VerifiedSQLPanelProps {
 
 export function VerifiedSQLPanel({ sql }: VerifiedSQLPanelProps) {
   return (
-    <Card>
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-200">{sql || "-"}</pre>
-    </Card>
+    <InspectorCodePanel
+      title="Verified SQL"
+      language="sql"
+      content={sql ?? ""}
+      emptyText="No verified SQL yet."
+    />
   );
 }

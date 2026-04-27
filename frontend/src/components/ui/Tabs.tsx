@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 
 export interface TabItem {
   key: string;
   label: string;
-  content: React.ReactNode;
+  content: ReactNode;
 }
 
 interface TabsProps {
@@ -20,25 +20,27 @@ export function Tabs({ items, defaultKey }: TabsProps) {
   const activeItem = items.find((item) => item.key === active) ?? items[0];
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-2">
-        {items.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => setActive(item.key)}
-            className={cn(
-              "rounded-md px-3 py-1.5 text-xs font-medium",
-              item.key === active
-                ? "bg-cyan-500 text-slate-950"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-            )}
-          >
-            {item.label}
-          </button>
-        ))}
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="overflow-x-auto">
+        <div className="inline-flex rounded-xl border border-zinc-200 bg-zinc-100/80 p-1">
+          {items.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setActive(item.key)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+                item.key === active
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-800"
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div>{activeItem?.content}</div>
+      <div className="min-h-0 flex-1">{activeItem?.content}</div>
     </div>
   );
 }

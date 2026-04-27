@@ -1,13 +1,9 @@
-import { Card } from "../ui/Card";
+import { InspectorCodePanel } from "./InspectorCodePanel";
 
 interface BuiltSQLPanelProps {
   sql?: string | null;
 }
 
 export function BuiltSQLPanel({ sql }: BuiltSQLPanelProps) {
-  return (
-    <Card>
-      <pre className="whitespace-pre-wrap break-words font-mono text-xs text-slate-200">{sql || "-"}</pre>
-    </Card>
-  );
+  return <InspectorCodePanel title="Built SQL" language="sql" content={sql ?? ""} emptyText="No built SQL yet." />;
 }

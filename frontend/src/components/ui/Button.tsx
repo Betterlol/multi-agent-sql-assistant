@@ -1,22 +1,24 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
+import { theme } from "../../styles/theme";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "danger";
+  variant?: "primary" | "secondary" | "danger" | "ghost";
 }
 
 export function Button({ children, className, variant = "primary", ...props }: ButtonProps) {
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-        "focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-950",
-        variant === "primary" && "bg-cyan-500 text-slate-950 hover:bg-cyan-400 disabled:bg-cyan-800",
-        variant === "secondary" && "bg-slate-800 text-slate-100 hover:bg-slate-700 disabled:bg-slate-900",
-        variant === "danger" && "bg-rose-600 text-white hover:bg-rose-500 disabled:bg-rose-900",
-        "disabled:cursor-not-allowed",
+        "inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold transition-all duration-150",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+        "disabled:cursor-not-allowed disabled:opacity-55",
+        variant === "primary" && cn("border-zinc-900", theme.colors.primary),
+        variant === "secondary" && cn("border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"),
+        variant === "danger" && cn("border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"),
+        variant === "ghost" && cn("border-transparent bg-transparent text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"),
         className
       )}
       {...props}

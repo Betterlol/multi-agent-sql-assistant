@@ -5,6 +5,7 @@ import {
   getPaginationRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import { DatabaseZap } from "lucide-react";
 import { useMemo } from "react";
 
 import { Badge } from "../ui/Badge";
@@ -39,7 +40,7 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
           if (value === null) {
             return <Badge tone="warning">NULL</Badge>;
           }
-          return <span className="font-mono text-xs text-slate-200">{String(value)}</span>;
+          return <span className="font-mono text-xs text-zinc-700">{String(value)}</span>;
         },
       })),
     [columns]
@@ -58,25 +59,27 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
   });
 
   return (
-    <Card>
-      <div className="mb-3 flex items-center justify-between">
-        <div className="text-sm font-semibold text-slate-200">Result Rows</div>
-        <div className="text-xs text-slate-500">{rows.length} rows</div>
+    <Card className="p-5">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-zinc-900">Result Table</h3>
+        <span className="text-xs font-medium text-zinc-500">{rows.length} rows</span>
       </div>
 
       {columns.length === 0 ? (
-        <div className="rounded-md border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">
-          暂无结果
+        <div className="flex min-h-[220px] flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 text-center">
+          <DatabaseZap className="mb-3 h-6 w-6 text-zinc-400" />
+          <p className="text-sm font-medium text-zinc-700">No rows returned</p>
+          <p className="mt-1 text-xs text-zinc-500">Try broadening your query or increasing max rows.</p>
         </div>
       ) : (
         <>
-          <div className="max-w-full overflow-auto rounded-md border border-slate-800">
+          <div className="max-w-full overflow-auto rounded-2xl border border-zinc-200">
             <table className="min-w-full text-left text-xs">
-              <thead className="sticky top-0 bg-slate-900">
+              <thead className="sticky top-0 z-10 bg-zinc-100/95 backdrop-blur">
                 {table.getHeaderGroups().map((headerGroup) => (
                   <tr key={headerGroup.id}>
                     {headerGroup.headers.map((header) => (
-                      <th key={header.id} className="border-b border-slate-800 px-3 py-2 font-semibold text-slate-300">
+                      <th key={header.id} className="border-b border-zinc-200 px-3 py-2.5 text-xs font-semibold text-zinc-700">
                         {flexRender(header.column.columnDef.header, header.getContext())}
                       </th>
                     ))}
@@ -85,9 +88,12 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
               </thead>
               <tbody>
                 {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-slate-900/60">
+                  <tr
+                    key={row.id}
+                    className="border-b border-zinc-100 odd:bg-white even:bg-zinc-50/50 hover:bg-indigo-50/40"
+                  >
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-3 py-2 align-top">
+                      <td key={cell.id} className="px-3 py-2.5 align-top">
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -97,22 +103,14 @@ export function ResultTable({ columns, rows }: ResultTableProps) {
             </table>
           </div>
 
-          <div className="mt-3 flex items-center justify-end gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <Button variant="secondary" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()}>
               Prev
             </Button>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-zinc-500">
               Page {table.getState().pagination.pageIndex + 1} / {table.getPageCount() || 1}
             </span>
-            <Button
-              variant="secondary"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
+            <Button variant="secondary" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()}>
               Next
             </Button>
           </div>

@@ -1,44 +1,66 @@
 import { Database, Table2 } from "lucide-react";
 
-import type { TableSchema } from "../../lib/types";
+import type { TableSchema, UploadResponse } from "../../lib/types";
 import { Card } from "../ui/Card";
 
 interface SidebarProps {
   tableSchema: TableSchema;
   tableCount: number;
+  uploadInfo: UploadResponse | null;
 }
 
-export function Sidebar({ tableSchema, tableCount }: SidebarProps) {
+export function Sidebar({ tableSchema, tableCount, uploadInfo }: SidebarProps) {
   const tableEntries = Object.entries(tableSchema);
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
-          <Database className="h-4 w-4 text-cyan-400" />
-          Schema Viewer
+      <Card className="p-4">
+        <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900">
+          <Database className="h-4 w-4 text-zinc-700" />
+          Database Context
         </div>
-        <p className="mt-2 text-xs text-slate-400">Tables: {tableCount}</p>
+        {uploadInfo ? (
+          <div className="mt-3 space-y-2 text-xs text-zinc-600">
+            <p>
+              <span className="font-semibold text-zinc-800">File:</span> {uploadInfo.filename}
+            </p>
+            <p>
+              <span className="font-semibold text-zinc-800">Database ID:</span>
+            </p>
+            <p className="break-all rounded-lg bg-zinc-100 px-2 py-1 font-mono text-[11px]">{uploadInfo.database_id}</p>
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-zinc-500">Upload a SQLite file to inspect schema.</p>
+        )}
       </Card>
 
-      <Card className="max-h-[70vh] overflow-auto">
-        <div className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-400">Tables</div>
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-900">Schema Explorer</h2>
+          <span className="rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-semibold text-zinc-600">
+            {tableCount} tables
+          </span>
+        </div>
+
         {tableEntries.length === 0 ? (
-          <p className="text-sm text-slate-500">上传数据库后显示表结构</p>
+          <p className="text-sm text-zinc-500">No schema loaded.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="max-h-[58vh] space-y-2 overflow-auto pr-1">
             {tableEntries.map(([table, columns]) => (
-              <div key={table} className="rounded-md border border-slate-800 bg-slate-950/60 p-2">
-                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-100">
-                  <Table2 className="h-4 w-4 text-cyan-500" />
-                  {table}
-                </div>
-                <ul className="space-y-1 pl-1 text-xs text-slate-300">
+              <details key={table} className="group rounded-xl border border-zinc-200 bg-white" open>
+                <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm font-semibold text-zinc-800 marker:content-none">
+                  <Table2 className="h-4 w-4 text-zinc-500" />
+                  <span className="truncate">{table}</span>
+                  <span className="ml-auto text-xs font-medium text-zinc-400">{columns.length}</span>
+                </summary>
+                <ul className="space-y-1 border-t border-zinc-100 px-3 py-2">
                   {columns.map((column) => (
-                    <li key={column} className="font-mono">- {column}</li>
+                    <li key={column} className="truncate rounded-md px-1.5 py-1 font-mono text-xs text-zinc-600 hover:bg-zinc-50">
+                      {column}
+                    </li>
                   ))}
                 </ul>
-              </div>
+              </details>
             ))}
           </div>
         )}

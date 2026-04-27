@@ -12,27 +12,27 @@ interface QueryHistoryProps {
 
 export function QueryHistory({ items, onSelect }: QueryHistoryProps) {
   return (
-    <Card>
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
-        <Clock3 className="h-4 w-4 text-cyan-400" />
+    <Card className="p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900">
+        <Clock3 className="h-4 w-4 text-zinc-500" />
         Query History
       </div>
 
       {items.length === 0 ? (
-        <p className="text-xs text-slate-500">暂无历史记录</p>
+        <p className="text-sm text-zinc-500">No history yet.</p>
       ) : (
-        <div className="max-h-56 space-y-2 overflow-auto">
+        <div className="max-h-[28vh] space-y-2 overflow-auto pr-1">
           {items.map((item) => (
             <button
               key={item.id}
               type="button"
               onClick={() => onSelect(item)}
-              className="w-full rounded-md border border-slate-800 bg-slate-950/60 p-2 text-left hover:bg-slate-900"
+              className="w-full rounded-xl border border-zinc-200 bg-white p-3 text-left transition hover:border-zinc-300 hover:bg-zinc-50"
             >
-              <div className="line-clamp-2 text-xs text-slate-200">{item.question}</div>
-              <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+              <p className="line-clamp-2 text-sm text-zinc-700">{item.question}</p>
+              <div className="mt-2 flex items-center justify-between text-xs text-zinc-500">
                 <span>{formatTime(item.timestamp)}</span>
-                <Badge tone={item.success ? "success" : "danger"}>{item.success ? "ok" : "fail"}</Badge>
+                <Badge tone={item.success ? "success" : "danger"}>{item.success ? "success" : "failed"}</Badge>
               </div>
             </button>
           ))}
