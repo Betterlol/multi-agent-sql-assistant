@@ -16,13 +16,13 @@ interface UploadPanelProps {
 export function UploadPanel({ file, uploading, uploadInfo, onFileChange, onUpload }: UploadPanelProps) {
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900">
-        <Upload className="h-4 w-4 text-zinc-500" />
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+        <Upload className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
         Database Upload
       </div>
 
       <div className="space-y-3">
-        <label className="inline-flex h-11 w-full cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-50">
+        <label className="inline-flex h-11 w-full cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-600 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
           {file ? file.name : "Choose .sqlite/.db file"}
           <input
             type="file"
@@ -43,14 +43,14 @@ export function UploadPanel({ file, uploading, uploadInfo, onFileChange, onUploa
         </Button>
       </div>
 
-      <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
+      <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600 dark:border-zinc-700/60 dark:bg-zinc-800/65 dark:text-zinc-300">
         {uploadInfo ? (
           <div className="space-y-1">
             <p className="inline-flex items-center gap-1.5">
               <Database className="h-3.5 w-3.5" />
               <span className="font-semibold">{uploadInfo.table_count}</span> tables loaded
             </p>
-            <p className="break-all font-mono text-[11px]">{uploadInfo.database_id}</p>
+            <p className="break-all font-mono text-[11px] text-zinc-500 dark:text-zinc-300">{uploadInfo.database_id}</p>
           </div>
         ) : (
           "Supports .sqlite / .sqlite3 / .db"

@@ -30,8 +30,8 @@ export function QueryComposer(props: QueryComposerProps) {
     <Card className="space-y-5 p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-zinc-900">Query Composer</h2>
-          <p className="mt-1 text-sm text-zinc-500">Describe the result you need. The assistant will build safe SQL.</p>
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Query Composer</h2>
+          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Describe the result you need. The assistant will build safe SQL.</p>
         </div>
         <Badge tone="accent" className="inline-flex items-center gap-1">
           <Sparkles className="h-3 w-3" />
@@ -48,7 +48,7 @@ export function QueryComposer(props: QueryComposerProps) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[140px_160px_minmax(0,1fr)_auto]">
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Max Rows</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Max Rows</label>
           <Input
             type="number"
             min={1}
@@ -59,14 +59,14 @@ export function QueryComposer(props: QueryComposerProps) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Enable LLM</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Enable LLM</label>
           <button
             type="button"
             onClick={() => props.onLLMEnabledChange(!props.llmEnabled)}
             className={`inline-flex h-11 w-full items-center rounded-xl border px-3 text-sm font-semibold transition ${
               props.llmEnabled
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/20 dark:text-emerald-200"
+                : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
             }`}
           >
             {props.llmEnabled ? "Enabled" : "Disabled"}
@@ -74,7 +74,7 @@ export function QueryComposer(props: QueryComposerProps) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Model (Optional)</label>
+          <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Model (Optional)</label>
           <Input
             value={props.model}
             onChange={(event) => props.onModelChange(event.target.value)}
@@ -100,9 +100,9 @@ export function QueryComposer(props: QueryComposerProps) {
       </div>
 
       {props.llmEnabled && (
-        <div className="grid grid-cols-1 gap-4 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 lg:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 rounded-2xl border border-zinc-200 bg-zinc-50/70 p-4 dark:border-zinc-700/60 dark:bg-zinc-800/55 lg:grid-cols-2">
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">OpenAI API Key</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">OpenAI API Key</label>
             <Input
               type="password"
               autoComplete="off"
@@ -110,17 +110,17 @@ export function QueryComposer(props: QueryComposerProps) {
               onChange={(event) => props.onApiKeyChange(event.target.value)}
               placeholder="sk-..."
             />
-            <p className="text-xs text-zinc-500">留空时将使用后端环境变量中的 OPENAI_API_KEY。</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">留空时将使用后端环境变量中的 OPENAI_API_KEY。</p>
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500">Base URL (Optional)</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Base URL (Optional)</label>
             <Input
               value={props.baseUrl}
               onChange={(event) => props.onBaseUrlChange(event.target.value)}
               placeholder="https://api.openai.com/v1"
             />
-            <p className="text-xs text-zinc-500">用于兼容代理网关或第三方 OpenAI 兼容端点。</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">用于兼容代理网关或第三方 OpenAI 兼容端点。</p>
           </div>
         </div>
       )}

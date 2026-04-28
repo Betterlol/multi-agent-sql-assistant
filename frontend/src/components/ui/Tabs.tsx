@@ -22,7 +22,7 @@ export function Tabs({ items, defaultKey }: TabsProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="overflow-x-auto">
-        <div className="inline-flex rounded-xl border border-zinc-200 bg-zinc-100/80 p-1">
+        <div className="inline-flex rounded-xl border border-zinc-200 bg-zinc-100/80 p-1 dark:border-zinc-700 dark:bg-zinc-800/70">
           {items.map((item) => (
             <button
               key={item.key}
@@ -31,8 +31,8 @@ export function Tabs({ items, defaultKey }: TabsProps) {
               className={cn(
                 "rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
                 item.key === active
-                  ? "bg-white text-zinc-900 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-800"
+                  ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-900 dark:text-zinc-100"
+                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-100"
               )}
             >
               {item.label}

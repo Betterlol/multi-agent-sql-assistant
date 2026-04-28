@@ -25,6 +25,8 @@ import type {
 } from "./lib/types";
 import { loadHistory, saveHistory } from "./lib/utils";
 
+type ThemeMode = "light" | "dark";
+
 export default function App() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [backendOk, setBackendOk] = useState(true);
@@ -52,6 +54,20 @@ export default function App() {
       return "";
     }
   });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    try {
+      const saved = localStorage.getItem("sql-assistant-theme-mode");
+      if (saved === "dark" || saved === "light") {
+        return saved;
+      }
+    } catch {
+      // no-op
+    }
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      return "dark";
+    }
+    return "light";
+  });
 
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<QueryResponse | null>(null);
@@ -59,6 +75,16 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", themeMode === "dark");
+    try {
+      localStorage.setItem("sql-assistant-theme-mode", themeMode);
+    } catch {
+      // no-op
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     saveHistory(history);
@@ -173,6 +199,10 @@ export default function App() {
     setQuestion(item.question);
   }, []);
 
+  const handleToggleTheme = useCallback(() => {
+    setThemeMode((current) => (current === "dark" ? "light" : "dark"));
+  }, []);
+
   const debugTabs = useMemo<TabItem[]>(
     () => [
       {
@@ -213,6 +243,8 @@ export default function App() {
           file={file}
           uploading={uploading}
           uploadInfo={uploadInfo}
+          themeMode={themeMode}
+          onToggleTheme={handleToggleTheme}
           onFileChange={setFile}
           onUpload={handleUpload}
         />
@@ -225,8 +257,8 @@ export default function App() {
       }
       inspector={
         <Card className="flex h-full min-h-[460px] flex-col p-5 xl:min-h-0">
-          <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-zinc-900">
-            <FlaskConical className="h-4 w-4 text-zinc-500" />
+          <div className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            <FlaskConical className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
             SQL Inspector
           </div>
           <div className="min-h-0 flex-1">
@@ -237,7 +269,7 @@ export default function App() {
     >
       <div className="space-y-6">
         {error && (
-          <Card className="border-rose-200 bg-rose-50 p-4 text-rose-700">
+          <Card className="border-rose-200 bg-rose-50 p-4 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-200">
             <div className="inline-flex items-center gap-2 text-sm font-medium">
               <AlertTriangle className="h-4 w-4" />
               {error}

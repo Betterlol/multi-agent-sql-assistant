@@ -1,9 +1,11 @@
-import { Activity, CloudOff, Database, Gauge, Sparkles, Upload } from "lucide-react";
+import { Activity, CloudOff, Database, Gauge, Moon, Sparkles, Sun, Upload } from "lucide-react";
 
 import type { MetricsResponse, UploadResponse } from "../../lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
+
+type ThemeMode = "light" | "dark";
 
 interface TopBarProps {
   metrics: MetricsResponse | null;
@@ -11,6 +13,8 @@ interface TopBarProps {
   file: File | null;
   uploading: boolean;
   uploadInfo: UploadResponse | null;
+  themeMode: ThemeMode;
+  onToggleTheme: () => void;
   onFileChange: (file: File | null) => void;
   onUpload: () => void;
 }
@@ -21,22 +25,24 @@ export function TopBar({
   file,
   uploading,
   uploadInfo,
+  themeMode,
+  onToggleTheme,
   onFileChange,
   onUpload,
 }: TopBarProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="min-w-0">
-        <div className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-600">
+        <div className="inline-flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
           <Sparkles className="h-3.5 w-3.5" />
           AI SQL Workbench
         </div>
-        <h1 className="mt-2 text-lg font-bold tracking-tight text-zinc-900 md:text-xl">SQL Assistant</h1>
-        <p className="text-sm text-zinc-500">FastAPI + SQLite + QuerySpec + Parameterized SQL</p>
+        <h1 className="mt-2 text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-100 md:text-xl">SQL Assistant</h1>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">FastAPI + SQLite + QuerySpec + Parameterized SQL</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50">
+        <label className="inline-flex h-10 cursor-pointer items-center rounded-xl border border-zinc-200 bg-white px-3.5 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800">
           <Upload className="mr-2 h-4 w-4" />
           {file ? file.name : "Choose SQLite"}
           <input
@@ -56,6 +62,11 @@ export function TopBar({
           ) : (
             "Upload"
           )}
+        </Button>
+
+        <Button variant="secondary" onClick={onToggleTheme} className="px-3">
+          {themeMode === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {themeMode === "dark" ? "Light" : "Dark"}
         </Button>
 
         {backendOk ? (
